@@ -14,10 +14,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const hunter = await mk('Murray', base);
   const h1 = await mk('Alice', { latitude: 51.5105, longitude: -0.0830 });
   const h2 = await mk('Bob', { latitude: 51.5050, longitude: -0.0920 });
-  await open(hunter.page, URL); await hunter.page.fill('#name', 'Murray'); await hunter.page.click('#btnCreate');
+  await open(hunter.page, URL); await hunter.page.fill('#name', 'Murray'); await hunter.page.check('#agree'); await hunter.page.click('#btnCreate');
   await hunter.page.waitForSelector('#lobbyCode:not(:empty)'); const code = await hunter.page.textContent('#lobbyCode');
   console.log('code', code);
-  for (const p of [h1, h2]) { await open(p.page, URL + '/j/' + code); await p.page.fill('#name', p.name); console.log('filled', await p.page.inputValue('#name')); await p.page.click('#btnJoin'); await sleep(500); console.log('toast', await p.page.textContent('#toast')); await p.page.waitForSelector('#lobbyCode:not(:empty)', { timeout: 15000 }).catch(async e => { console.log('join fail', p.page.url(), await p.page.textContent('#toast'), await p.page.inputValue('#code')); await p.page.screenshot({ path: '/tmp/fail.png' }); throw e; }); }
+  for (const p of [h1, h2]) { await open(p.page, URL + '/j/' + code); await p.page.fill('#name', p.name); console.log('filled', await p.page.inputValue('#name')); await p.page.check('#agree'); await p.page.click('#btnJoin'); await sleep(500); console.log('toast', await p.page.textContent('#toast')); await p.page.waitForSelector('#lobbyCode:not(:empty)', { timeout: 15000 }).catch(async e => { console.log('join fail', p.page.url(), await p.page.textContent('#toast'), await p.page.inputValue('#code')); await p.page.screenshot({ path: '/tmp/fail.png' }); throw e; }); }
   await hunter.page.waitForFunction(() => document.querySelectorAll('#playerList li').length === 3 && document.querySelectorAll('.pill.ok').length === 3, null, { timeout: 20000 });
   await hunter.page.fill('#sGame', '2'); await hunter.page.dispatchEvent('#sGame', 'change');
   await hunter.page.fill('#sPing', '10'); await hunter.page.dispatchEvent('#sPing', 'change');
@@ -49,6 +49,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await hunter.page.click(`#hiderBtns button:has-text("Alice")`);
   await sleep(1000);
   await h2.page.click('#btnCaughtSelf');
+  await hunter.page.waitForSelector('#catchBox [data-cy]', { timeout: 10000 }); console.log('hunter got catch confirm prompt');
+  await hunter.page.click('#catchBox [data-cy]');
   await hunter.page.waitForSelector('#end:not(.hidden)', { timeout: 10000 });
   await sleep(1500);
   await hunter.page.screenshot({ path: 'shots/end.png', fullPage: true });
@@ -91,7 +93,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await h2.page.waitForFunction(() => /Host: Bob/.test(document.getElementById('hostName').textContent) && !document.getElementById('hostPanel').classList.contains('hidden'));
   console.log('host transferred to Bob:', await h2.page.textContent('#hostName'));
   // Alice rejoins with code as a new player
-  await h1.page.fill('#name', 'Alice'); await h1.page.fill('#code', code); await h1.page.click('#btnJoin');
+  await h1.page.fill('#name', 'Alice'); await h1.page.fill('#code', code); await h1.page.check('#agree'); await h1.page.click('#btnJoin');
   await h2.page.waitForFunction(() => document.querySelectorAll('#playerList li').length === 2);
   console.log('Alice rejoined as new: players =', await h2.page.locator('#playerList li .nm').allTextContents());
   await browser.close();

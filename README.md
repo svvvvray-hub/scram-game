@@ -151,3 +151,75 @@ Run only **one instance** — lobbies live in that process's memory.
 ```
 docker build -t scram . && docker run -p 3000:3000 scram
 ```
+
+## v5 — teams, catch confirmation, recap, reels, sharing
+
+**Roles & teams.** The host taps role pills (any number of hunters, at least 1) or 🎲 *Randomize roles* with a chosen
+hunter count. *🧟 Caught hiders join the hunters* (infection, on by default): the caught hider becomes a hunter,
+gets a toast and starts receiving pings. Each hunter's ping marks *their* nearest uncaught hider (🎯), and the
+sudden-death compass points each hunter at their own nearest uncaught hider. The game ends when every hider is caught
+or time runs out.
+
+**Catch confirmation.** A hider taps *I got caught* → the nearest hunter within ~30 m (any hunter if there's no GPS
+fix) gets a Confirm / No prompt. A hunter taps a hider under *🙌 I caught someone* → that hider confirms. The other side
+confirming (or also claiming) within 20 s finalizes it; unanswered claims expire. The host can confirm/cancel any claim,
+and the host's own catches are immediate (override).
+
+**Screen wake lock.** Requested when a round starts and while recording, re-acquired on `visibilitychange`, released
+when the round ends (and recording stops). A warning shows if the browser has no Wake Lock API.
+
+**Recap (end screen).** The server records each player's GPS trail (~every 5 s, memory only) and a structured event log
+(pings incl. decoy fake points flagged as decoys, decoys armed, bounty claims, chimes, out-of-bounds in/out, catches
+with who caught whom, the cam-peek photo, compass phase). Trails are **only sent after the round ends** (`recap`
+message) — never during play — and are wiped at Play again / next start. The recap has:
+- animated replay of everyone's path (▶ / scrubber; a whole round plays in 8–30 s, 20 min ≈ 30 s), event markers;
+- 🔥 heat-map toggle (own canvas layer): blue = where hiders spent time, red = where hunters searched;
+- awards: longest survivor, closest call, most distance walked, decoy master, bounty hunter, fastest catch, most out of bounds;
+- **close calls**: a hunter within 20 m of an uncaught hider who then wasn't caught for 60 s
+  (“Ana walked right past Bob, 12 m, at 07:42”) — in the timeline and on the replay (😱);
+- 🏆 trophies: Ghost, Bloodhound, Close Shave, Decoy Master, Bounty Hunter, Marathoner, Escape Artist, First Blood, Zombie, Rule Bender;
+- timeline of every event; *📤 Share recap* renders a 1080×1350 PNG (paths, awards, trophies, lobby code/date,
+  opted-in Instagram handles, “Game by @mmmmmray”) and shares it via `navigator.share({files})`, else downloads it.
+Math lives in `public/recap.js` (shared by server and browser, unit-tested).
+
+**Recording.** Default *Standard* preset: 1280×720 ideal, ≤30 fps, 1.5 Mbps video, 64 kbps mono audio
+(≈11.7 MB/min). ⚙ Quality: Saver 480p/0.8 Mbps (≈6.5 MB/min), High 1080p/4 Mbps (≈30.5 MB/min). MediaRecorder runs
+with a 1 s timeslice and auto-saves a new file every 3 min (`…_part2`, `…_part3`); the next recorder starts on the same
+stream before the old one stops, so there's no gap. Once a clip is downloaded/shared its blob is freed (during a round
+clips are kept until the highlight reel is built or Play again). A one-time-per-session notice asks you to get
+permission from anyone you record.
+
+**Highlight reel (in the browser, no server video work).** At game end each recording phone picks moments from its
+*own* clips by matching recording timestamps to event times (catches, close calls involving you, decoys, bounty claims,
+chimes, the final seconds), cuts ~4 s around each and re-records them through a canvas + MediaRecorder at 720p ~2 Mbps:
+title card (code, date, your name/role), captions (“CLOSE CALL - 12 m”, “CAUGHT!”), quick crossfades, final trophy card
+with handles and creator credit. Preview → Save / Share. Phones without clips are skipped.
+*Group reel (opt-in):* *📨 Send my highlights to host* uploads only your short cuts (each <10 s, ≤15 MB total) over the
+WebSocket; held in server memory for that lobby only, deleted after 30 min or at Play again. The host's phone stitches
+everyone's cuts in event-time order.
+**🔥 Make it viral** (every player): vertical 720×1280, 15–30 s, ~2.5 Mbps — opens with your best moment
+(catch > close call < 15 m > decoy > bounty > final seconds), big animated captions (“HE WAS 12 M AWAY 😳”,
+“DECOY WORKED 👻”, “CAUGHT AT 19:58”), punch-in zoom, round mini-map bubble + countdown, beat-length cuts, optional
+procedurally generated Web Audio beat ducked under the clip audio, end card “Play free → SHARE_LINK”, “Game by
+@mmmmmray” and your handle. Shared with the text “Play free at <link>”.
+*Limitations:* the page must stay in the foreground while building; building takes about real time (a 15 s reel takes
+~15 s); iOS Safari records MP4 only, may refuse autoplaying/seeking blob video until you tap, may not capture audio
+from `<video>` into the canvas stream, and `navigator.share` with video files needs iOS 15+; huge clips can run phones
+out of memory — prefer Saver/Standard.
+
+**Share links.** `SHARE_LINK` (top of `app.js`, default `location.origin + '/play'`). `/play` is a 302 to `/`
+(set `PLAY_REDIRECT_URL` to point it at a custom domain); `/p/<code>` deep-links a lobby. `?ref=<handle>` visits are
+counted in memory and logged (`[ref] handle visits=N`).
+
+**Instagram (optional).** Join screen field; accepts `@handle`, `handle` or an instagram.com URL (letters, digits,
+`.`, `_`, max 30), remembered in localStorage. Shown as a link only in the lobby and the recap (never during a game),
+on the share image and the reel end cards. `CREATOR_IG = 'mmmmmray'` → “Follow the creator on Instagram”.
+
+**Legal.** `/terms` and `/privacy` (Last Ping Terms / Privacy). Create/Join requires “I'm 18+ and agree to the Terms
+and Privacy Policy” (remembered per `LEGAL_VERSION`); the server rejects create/join without `agreed: true`.
+
+### Tests
+`npm test` (unit: game, trails, awards/trophies/close calls, infection, multi-hunter targeting, catch confirmation,
+highlight uploads, Instagram validation, /play redirect, consent). E2E (server on :3000, Chrome):
+`node test/e2e.js`, `e2e_features.js`, `e2e_field.js`, `e2e_record.js`, `e2e_recap.js` (2-hunter game, catch confirm,
+3 s recording segments at the preset bitrate, recap replay/heat map/share image, reels, group reel, viral clip).

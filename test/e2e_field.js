@@ -25,9 +25,9 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
     return { name, ctx, page, frames };
   };
   const host = await mk('Murray', base), alice = await mk('Alice', inside), bob = await mk('Bob', outside);
-  await open(host.page, URL); await host.page.fill('#name', 'Murray'); await host.page.click('#btnCreate');
+  await open(host.page, URL); await host.page.fill('#name', 'Murray'); await host.page.check('#agree'); await host.page.click('#btnCreate');
   await host.page.waitForSelector('#lobbyCode:not(:empty)'); const code = await host.page.textContent('#lobbyCode');
-  for (const p of [alice, bob]) { await open(p.page, URL + '/j/' + code); await p.page.fill('#name', p.name); await p.page.click('#btnJoin'); await p.page.waitForSelector('#lobbyCode:not(:empty)'); }
+  for (const p of [alice, bob]) { await open(p.page, URL + '/j/' + code); await p.page.fill('#name', p.name); await p.page.check('#agree'); await p.page.click('#btnJoin'); await p.page.waitForSelector('#lobbyCode:not(:empty)'); }
   await host.page.waitForFunction(() => document.querySelectorAll('#playerList li').length === 3 && document.querySelectorAll('.pill.ok').length >= 3, null, { timeout: 20000 });
   check(await host.page.evaluate(() => S.field === null && document.querySelector('#fieldRadius [data-r="0"]').classList.contains('on')), 'default is No boundary');
   check(await alice.page.isHidden('#fieldPanel'), 'non-host sees no field panel while there is no boundary');

@@ -4,10 +4,10 @@
   "description": "",
   "main": "server.js",
   "directories": {
-    "test": "node --test --test-force-exit test/game.test.js"
+    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js"
   },
   "scripts": {
-    "test": "node --test --test-force-exit test/game.test.js",
+    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js",
     "start": "node server.js"
   },
   "keywords": [],
@@ -23,5 +23,8 @@
   "devDependencies": {
     "playwright": "^1.64.1",
     "tunnelmole": "^2.4.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

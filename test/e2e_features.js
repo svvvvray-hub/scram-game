@@ -24,9 +24,9 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   const hunter = await mk('Murray', base);
   const alice = await mk('Alice', { latitude: nearA.lat, longitude: nearA.lng });
   const bob = await mk('Bob', { latitude: 51.5110, longitude: -0.0830 });
-  await open(hunter.page, URL); await hunter.page.fill('#name', 'Murray'); await hunter.page.click('#btnCreate');
+  await open(hunter.page, URL); await hunter.page.fill('#name', 'Murray'); await hunter.page.check('#agree'); await hunter.page.click('#btnCreate');
   await hunter.page.waitForSelector('#lobbyCode:not(:empty)'); const code = await hunter.page.textContent('#lobbyCode');
-  for (const p of [alice, bob]) { await open(p.page, URL + '/j/' + code); await p.page.fill('#name', p.name); await p.page.click('#btnJoin'); await p.page.waitForSelector('#lobbyCode:not(:empty)'); }
+  for (const p of [alice, bob]) { await open(p.page, URL + '/j/' + code); await p.page.fill('#name', p.name); await p.page.check('#agree'); await p.page.click('#btnJoin'); await p.page.waitForSelector('#lobbyCode:not(:empty)'); }
   await hunter.page.waitForFunction(() => document.querySelectorAll('#playerList li').length === 3 && document.querySelectorAll('.pill.ok').length >= 3, null, { timeout: 20000 });
   // consent: Alice allows camera, Bob readies without
   await alice.page.waitForSelector('#camPanel:not(.hidden)'); await alice.page.click('#btnReadyCam');

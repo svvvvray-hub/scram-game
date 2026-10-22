@@ -6,10 +6,13 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const Field = require('./public/field');
+const Recap = require('./public/recap');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
 const MAX_GAME_MS = 6 * 3600 * 1000;      // safety cap for a single running round
 const STALE_MS = 45 * 1000;
+const HL_TTL = 30 * 60 * 1000;           // uploaded highlight cuts live 30 min max (memory only)
+const HL_MAX = 15 * 1024 * 1024, HL_CUT_MAX = 3 * 1024 * 1024;
 
 const rid = (n = 16) => crypto.randomBytes(n).toString('hex');
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -49,7 +52,17 @@ function createApp(opts = {}) {
   const lobbies = new Map();
   const app = express();
   app.set('trust proxy', true);
+  // Share links: /play is a controllable 302 (point it at a custom domain with PLAY_REDIRECT_URL); /p/<code> deep-links a lobby.
+  // ?ref=<handle> visits are counted in memory and logged.
+  const refs = new Map(), env = opts.env || process.env;
+  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = Recap.igHandle(req.query.ref); if (h) { refs.set(h, (refs.get(h) || 0) + 1); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
+  const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
+    return /^https?:/i.test(base) ? u.toString() : u.pathname + u.search; };
+  app.get('/play', (req, res) => res.redirect(302, playTarget({ ref: Recap.igHandle(req.query.ref) })));
+  app.get('/p/:code', (req, res) => res.redirect(302, playTarget({ code: String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), ref: Recap.igHandle(req.query.ref) })));
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
+  app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
+  app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
   app.get('/healthz', (req, res) => res.json({ ok: true, lobbies: lobbies.size }));
   app.get('/j/:code', (req, res) => res.redirect('/?code=' + encodeURIComponent(req.params.code.toUpperCase())));
   app.get('/qr/:code.svg', async (req, res) => {
@@ -58,7 +71,7 @@ function createApp(opts = {}) {
   });
 
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 24 * 1024 * 1024 });
 
   const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
 
@@ -70,15 +83,16 @@ function createApp(opts = {}) {
         features: Object.fromEntries(FEATURES.map(f => [f, true])) },
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
+      trails: {}, log: [], catches: new Map(), recapCache: null, highlights: new Map(),
     };
     lobbies.set(code, L);
     return L;
   }
 
-  function addPlayer(L, name) {
+  function addPlayer(L, name, ig) {
     const p = { id: rid(6), token: rid(16), name: String(name || 'Player').trim().slice(0, 20) || 'Player',
       role: 'hider', caught: false, caughtAt: 0, ws: null, loc: null, perm: 'unknown', connected: false, revealedAt: 0,
-      cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false };
+      cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, ig: Recap.igHandle(ig) };
     if (!L.hostId) { L.hostId = p.id; p.role = 'hunter'; }
     L.players.set(p.id, p);
     return p;
@@ -95,7 +109,8 @@ function createApp(opts = {}) {
     const players = [...L.players.values()].map(p => {
       const o = { id: p.id, name: p.name, role: p.role, caught: p.caught, caughtAt: p.caughtAt, connected: p.connected, perm: p.perm,
         host: p.id === L.hostId, cam: p.cam, acc: p.loc ? Math.round(p.loc.acc) : null,
-        stale: !p.loc || (t - p.loc.recvAt) > STALE_MS, out: outFlag(L, p) }; // in/out flag only, never coords
+        stale: !p.loc || (t - p.loc.recvAt) > STALE_MS, out: outFlag(L, p) };
+      if (p.ig && (L.state === 'lobby' || ended)) o.ig = p.ig; // handles: lobby + recap only, never during a game // in/out flag only, never coords
       const canSeeLive = p.id === me.id ||
         (isHunter(me) && isHunter(p) && L.state !== 'lobby') ;
       if (canSeeLive && p.loc) o.loc = { lat: p.loc.lat, lng: p.loc.lng, acc: p.loc.acc, ts: p.loc.ts };
@@ -108,6 +123,7 @@ function createApp(opts = {}) {
     if (me.outSince) v.outSince = me.outSince;
     v.round = L.round; v.camAt = L.camAt; v.compassAt = L.compassAt;
     v.compass = inCompass(L);
+    v.catches = catchView(L, me); v.hlCount = L.highlights.size; v.hlMine = L.highlights.has(me.id);
     if (L.bounty && L.settings.features.bounty) v.bounty = { id: L.bounty.id, lat: L.bounty.lat, lng: L.bounty.lng, t: L.bounty.t, radius: 15 };
     if (me.role === 'hider') { v.decoys = me.decoys; v.decoyArmed = me.decoyArmed; v.cloaked = me.wipeNext; }
     if (isHunter(me) && L.state !== 'lobby') v.photos = Object.fromEntries(Object.entries(L.photos).map(([id, ph]) => [id, { name: ph.name, pending: ph.pending, unavailable: ph.unavailable, has: !!ph.data }])); // hunters only; image bytes go via camPeek
@@ -127,6 +143,33 @@ function createApp(opts = {}) {
   const outFlag = (L, p) => (L.state === 'playing' || L.state === 'hiding') ? !!p.outSince : !!(L.field && p.loc && !Field.inField(L.field, p.loc));
   function broadcast(L) { for (const p of L.players.values()) if (p.ws) send(p.ws, viewFor(L, p)); }
   function event(L, text) { L.events.push({ t: now(), text }); }
+  // ---- recap recording (memory only; exposed ONLY after the round ends) ----
+  const TRAIL_MS = opts.trailMs ?? 5000, CATCH_MS = opts.catchMs ?? 20000;
+  const running = L => L.state === 'playing' || L.state === 'hiding';
+  const rc = p => isHunter(p) ? 'h' : p.caught ? 'c' : 's';
+  function trail(L, p, force) {
+    if (!running(L) || !p.loc) return;
+    const tr = L.trails[p.id] || (L.trails[p.id] = []), t = now(), last = tr[tr.length - 1];
+    if (force || !last || t - last[0] >= TRAIL_MS) tr.push([t, +p.loc.lat.toFixed(6), +p.loc.lng.toFixed(6), rc(p)]);
+  }
+  function logEv(L, k, data, text) { if (L.state !== 'lobby') L.log.push({ t: now(), k, ...data, text }); }
+  const hunterList = L => [...L.players.values()].filter(isHunter);
+  function nearestHunter(L, h, maxM = Infinity) { let best = null, bd = maxM;
+    if (h.loc) for (const x of hunterList(L)) if (x.loc) { const d = distM(x.loc, h.loc); if (d <= bd) { bd = d; best = x; } } return best; }
+  function nearestHider(L, hu) { let best = null, bd = Infinity;
+    if (hu.loc) for (const h of activeHiders(L)) if (h.loc) { const d = distM(hu.loc, h.loc); if (d < bd) { bd = d; best = h; } } return best; }
+  function buildRecap(L) {
+    if (L.state !== 'ended') return null;
+    if (L.recapCache) return L.recapCache;
+    const players = [...L.players.values()].map(p => ({ id: p.id, name: p.name, startRole: p.startRole || p.role, role: p.role, caught: p.caught, caughtAt: p.caughtAt, caughtBy: p.caughtBy || null, ig: p.ig || null }));
+    const photos = Object.fromEntries(Object.entries(L.photos).filter(([, ph]) => ph.data).map(([id, ph]) => [id, { name: ph.name, data: ph.data, t: ph.t }]));
+    const R0 = { code: L.code, round: L.round, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, endedAt: L.endedAt, winner: L.winner,
+      players, trails: L.trails, log: [...L.log], photos, field: L.field };
+    R0.closeCalls = Recap.closeCalls(R0); R0.awards = Recap.computeAwards(R0); R0.trophies = Recap.computeTrophies(R0, R0.closeCalls);
+    for (const c of R0.closeCalls) R0.log.push({ t: c.t, k: 'close', hider: c.hider, hunter: c.hunter, d: c.d, lat: c.lat, lng: c.lng, text: '😱 ' + c.text });
+    R0.log.sort((a, b) => a.t - b.t);
+    return (L.recapCache = R0);
+  }
 
   const scale = L => L.settings.gameSec / 1200; // feature timings scale with game length (20 min = 1.0)
   // Out-of-bounds: a hider outside the field for oobGrace (30 s at 20 min, scaled) is flagged; the next ping
@@ -136,8 +179,8 @@ function createApp(opts = {}) {
     const t = now(), running = L.state === 'playing' || L.state === 'hiding';
     for (const p of L.players.values()) {
       const out = running && !!L.field && !(p.role === 'hider' && p.caught) && !!p.loc && !Field.inField(L.field, p.loc);
-      if (out && !p.outSince) { p.outSince = t; event(L, `⚠️ ${p.name} is out of bounds`); broadcast(L); }
-      else if (!out && p.outSince) { p.outSince = 0; p.oobReveal = false; broadcast(L); }
+      if (out && !p.outSince) { p.outSince = t; event(L, `⚠️ ${p.name} is out of bounds`); logEv(L, 'oob', { id: p.id, on: true }, `⚠️ ${p.name} left the field`); broadcast(L); }
+      else if (!out && p.outSince) { p.outSince = 0; p.oobReveal = false; logEv(L, 'oob', { id: p.id, on: false }, `✅ ${p.name} back inside`); broadcast(L); }
       if (out && p.role === 'hider' && L.state === 'playing' && !p.oobReveal && t - p.outSince >= oobGrace(L)) {
         p.oobReveal = true; event(L, `🚨 ${p.name} stayed out of bounds — revealed at the next ping`); broadcast(L);
       }
@@ -159,8 +202,10 @@ function createApp(opts = {}) {
       if (scheduled && !final && F.chime && hunters.some(x => distM(x.loc, h.loc) <= 40)) chimed.push(h);
     }
     L.pings.push({ t, locs, out: !scheduled, decoys, hidden });
+    logEv(L, 'ping', { locs, decoys, hidden, out: !scheduled }, `📡 Ping #${L.pings.length}${!scheduled ? ' (bounty)' : ''}${decoys.length ? ` · ${decoys.length} decoy` : ''}`);
+    if (chimed.length) logEv(L, 'chime', { ids: chimed.map(h => h.id) }, `🔔 ${chimed.map(h => h.name).join(', ')} chimed`);
     if (scheduled) L.nextPingAt = t + L.settings.pingSec * 1000;
-    for (const p of L.players.values()) send(p.ws, { type: 'ping', t, n: L.pings.length, out: !scheduled, ...(isHunter(p) ? { locs, hidden } : {}) });
+    for (const p of L.players.values()) send(p.ws, { type: 'ping', t, n: L.pings.length, out: !scheduled, ...(isHunter(p) ? { locs, hidden, nearest: nearestHider(L, p)?.id || null } : {}) });
     for (const h of chimed) send(h.ws, { type: 'chime' });
     if (chimed.length) for (const p of L.players.values()) if (isHunter(p)) send(p.ws, { type: 'chimeNearby', n: chimed.length });
   }
@@ -183,6 +228,7 @@ function createApp(opts = {}) {
     if (!b || !p.loc || L.state !== 'playing' || !L.settings.features.bounty || (p.role === 'hider' && p.caught)) return false;
     if (distM(p.loc, b) > 15) return false;
     L.bounty = null;
+    logEv(L, 'bounty', { id: p.id, lat: b.lat, lng: b.lng, effect: isHunter(p) ? 'ping' : 'wipe' }, `💰 ${p.name} claimed a bounty`);
     if (isHunter(p)) {
       event(L, `💰 ${p.name} grabbed the bounty — surprise ping!`);
       send(p.ws, { type: 'bounty', effect: 'ping' });
@@ -221,9 +267,13 @@ function createApp(opts = {}) {
     if (L.state === 'ended') return;
     if (L.state === 'playing' && winner === 'hiders') doPing(L, { final: true }); // final reveal
     expirePhotos(L);
+    for (const p of L.players.values()) trail(L, p, true);
+    logEv(L, 'end', { winner }, winner === 'hiders' ? '⏱ Time up — hiders win' : '🔦 Everyone caught — hunters win');
+    L.catches.clear();
     L.state = 'ended'; L.winner = winner; L.endedAt = now(); L.idleSince = now(); L.nextPingAt = 0;
     event(L, winner === 'hiders' ? 'Time up — hiders win!' : 'Everyone caught — hunters win!');
     broadcast(L);
+    const rcp = buildRecap(L); for (const p of L.players.values()) send(p.ws, { type: 'recap', recap: rcp });
   }
 
   function tick() {
@@ -235,14 +285,16 @@ function createApp(opts = {}) {
         lobbies.delete(L.code); // all locations dropped with it
         continue;
       }
-      if (L.state === 'hiding' && t >= L.hideEndsAt) { L.state = 'playing'; L.nextPingAt = t + L.settings.pingSec * 1000; event(L, 'Hunt is on!'); broadcast(L); }
+      if (L.state === 'hiding' && t >= L.hideEndsAt) { L.state = 'playing'; L.nextPingAt = t + L.settings.pingSec * 1000; event(L, 'Hunt is on!'); logEv(L, 'hunt', {}, '🔦 Hunt is on'); broadcast(L); }
       if (running) checkBounds(L);
+      for (const [pid, c] of L.catches) if (t >= c.expiresAt) { L.catches.delete(pid); const h = L.players.get(c.hiderId); event(L, `⌛ Catch claim for ${h ? h.name : '?'} expired`); broadcast(L); }
+      for (const [id, hl] of L.highlights) if (t - hl.t > HL_TTL) L.highlights.delete(id);
       if (L.state === 'playing') {
         if (t >= L.endsAt) { endGame(L, 'hiders'); continue; }
         const F = L.settings.features;
         if (inCompass(L)) {
           if (L.bounty) L.bounty = null;
-          if (!L.compassAnnounced) { L.compassAnnounced = true; L.nextPingAt = 0; event(L, '🧭 SUDDEN DEATH — map pings stop, hunters get a compass!'); broadcast(L); }
+          if (!L.compassAnnounced) { L.compassAnnounced = true; L.nextPingAt = 0; event(L, '🧭 SUDDEN DEATH — map pings stop, hunters get a compass!'); logEv(L, 'compass', {}, '🧭 Sudden-death compass phase'); broadcast(L); }
           if (t >= L.nextCompassAt) { L.nextCompassAt = t + Math.max(100, Math.min(2000, 2000 * scale(L) * 4)); sendCompass(L); }
         } else if (t >= L.nextPingAt) { doPing(L); broadcast(L); }
         if (F.bounty && !inCompass(L) && L.nextBountyAt && t >= L.nextBountyAt) {
@@ -259,11 +311,46 @@ function createApp(opts = {}) {
 
   function catchHider(L, h, by) {
     if (!h || h.role !== 'hider' || h.caught || !(L.state === 'playing' || L.state === 'hiding')) return;
-    h.caught = true; h.caughtAt = now();
+    trail(L, h, true);
+    h.caught = true; h.caughtAt = now(); h.caughtBy = by ? by.id : null;
+    for (const [pid, c] of L.catches) if (c.hiderId === h.id) L.catches.delete(pid);
     event(L, `${h.name} was caught${by ? ' by ' + by.name : ''}`);
-    if (L.settings.caughtBecomeHunter) h.role = 'hunter';
+    logEv(L, 'catch', { id: h.id, by: by ? by.id : null }, `🎯 ${by ? by.name + ' caught ' + h.name : h.name + ' was caught'}`);
+    if (L.settings.caughtBecomeHunter) { h.role = 'hunter'; send(h.ws, { type: 'infected' }); }
+    trail(L, h, true);
     if (activeHiders(L).length === 0) endGame(L, 'hunters'); else broadcast(L);
   }
+
+  // Catch confirmation: one side claims, the other side (or the host) confirms within CATCH_MS.
+  function claimCatch(L, h, hunter, by) {
+    if (!h || h.role !== 'hider' || h.caught || !running(L)) return;
+    const ex = [...L.catches.values()].find(c => c.hiderId === h.id);
+    if (ex) { if (ex.by !== by && (by === 'hider' || !ex.hunterId || ex.hunterId === hunter.id)) return finalizeCatch(L, ex, hunter); return; }
+    let target = by === 'hunter' ? hunter : nearestHunter(L, h, 30); // hider claim: nearest hunter within ~30 m, else any hunter
+    const c = { pid: rid(4), hiderId: h.id, hunterId: target ? target.id : null, by, t: now(), expiresAt: now() + CATCH_MS };
+    L.catches.set(c.pid, c);
+    const prompt = { type: 'catchPrompt', pid: c.pid, by, hider: h.name, hunter: target ? target.name : null, expiresAt: c.expiresAt };
+    if (by === 'hider') for (const x of hunterList(L)) { if (!c.hunterId || x.id === c.hunterId) send(x.ws, prompt); }
+    else send(h.ws, prompt);
+    broadcast(L);
+  }
+  function finalizeCatch(L, c, who) {
+    L.catches.delete(c.pid);
+    const h = L.players.get(c.hiderId), hunter = c.hunterId ? L.players.get(c.hunterId) : (who && isHunter(who) ? who : null);
+    catchHider(L, h, hunter);
+  }
+  function answerCatch(L, me, pid, yes) {
+    const c = L.catches.get(pid); if (!c) return;
+    const host = me.id === L.hostId;
+    const party = c.by === 'hider' ? (isHunter(me) && (!c.hunterId || c.hunterId === me.id)) : me.id === c.hiderId;
+    if (!host && !party) return;
+    if (yes) return finalizeCatch(L, c, me);
+    L.catches.delete(pid); const h = L.players.get(c.hiderId); event(L, `❌ Catch of ${h ? h.name : '?'} was rejected`); broadcast(L);
+  }
+  const catchView = (L, me) => [...L.catches.values()].filter(c => me.id === L.hostId || c.hiderId === me.id || c.hunterId === me.id || (!c.hunterId && isHunter(me)))
+    .map(c => ({ pid: c.pid, by: c.by, hiderId: c.hiderId, hider: L.players.get(c.hiderId)?.name, hunterId: c.hunterId, hunter: c.hunterId ? L.players.get(c.hunterId)?.name : null, expiresAt: c.expiresAt,
+      canAnswer: me.id === L.hostId || (c.by === 'hider' ? isHunter(me) && (!c.hunterId || c.hunterId === me.id) : me.id === c.hiderId) }));
+  function clearRound(L) { L.trails = {}; L.log = []; L.catches.clear(); L.recapCache = null; L.highlights.clear(); }
 
   function resetFeatures(L, ps) {
     L.bounty = null; L.photos = {}; L.camAt = L.compassAt = L.nextBountyAt = L.nextCompassAt = L.camDeadline = 0; L.compassAnnounced = false;
@@ -272,8 +359,8 @@ function createApp(opts = {}) {
   function rematch(L) {
     if (L.state !== 'ended') return;
     L.state = 'lobby'; L.pings = []; L.winner = null; L.events = []; L.startedAt = L.hideEndsAt = L.endsAt = L.nextPingAt = L.endedAt = 0;
-    L.idleSince = now(); resetFeatures(L, [...L.players.values()]);
-    for (const p of L.players.values()) { p.caught = false; p.caughtAt = 0; p.revealedAt = 0; if (p.startRole) p.role = p.startRole; }
+    L.idleSince = now(); resetFeatures(L, [...L.players.values()]); clearRound(L);
+    for (const p of L.players.values()) { p.caughtBy = null; p.caught = false; p.caughtAt = 0; p.revealedAt = 0; if (p.startRole) p.role = p.startRole; }
     broadcast(L);
   }
 
@@ -299,11 +386,12 @@ function createApp(opts = {}) {
     ws.on('message', raw => {
       let m; try { m = JSON.parse(raw); } catch { return; }
       if (!me) {
-        if (m.type === 'create') { L = newLobby(); me = addPlayer(L, m.name); }
+        if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
+        if (m.type === 'create') { L = newLobby(); me = addPlayer(L, m.name, m.ig); }
         else if (m.type === 'join') {
           L = lobbies.get(String(m.code || '').toUpperCase());
           if (!L) return send(ws, { type: 'error', error: 'Lobby not found' });
-          me = addPlayer(L, m.name);
+          me = addPlayer(L, m.name, m.ig);
           if (L.state === 'playing' || L.state === 'hiding') me.role = 'hunter'; // late joiners hunt (can't be fairly hidden)
         } else if (m.type === 'rejoin') {
           L = lobbies.get(String(m.code || '').toUpperCase());
@@ -314,6 +402,7 @@ function createApp(opts = {}) {
         me.ws = ws; me.connected = true;
         send(ws, { type: 'joined', code: L.code, id: me.id, token: me.token });
         broadcast(L);
+        if (L.state === 'ended') send(ws, { type: 'recap', recap: buildRecap(L) });
         if (isHunter(me) && L.state !== 'lobby') for (const [id, ph] of Object.entries(L.photos)) send(ws, { type: 'camPeek', id, ...ph });
         return;
       }
@@ -324,7 +413,7 @@ function createApp(opts = {}) {
           if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
           const first = !me.loc;
           me.loc = { lat, lng, acc: clampNum(m.acc, 0, 1e5, 999), ts: Number(m.ts) || now(), recvAt: now() };
-          if (me.ws) {}
+          trail(L, me);
           // Only hunters' live positions are pushed; hider updates trigger no broadcast with coords.
           const of = outFlag(L, me), ofChanged = of !== me.lastOut; me.lastOut = of;
           const permNew = first || me.perm !== 'granted'; me.perm = 'granted';
@@ -333,6 +422,7 @@ function createApp(opts = {}) {
           else send(ws, viewFor(L, me));
           break;
         }
+        case 'ig': me.ig = Recap.igHandle(m.ig); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
         case 'perm': me.perm = ['granted', 'denied', 'prompt', 'unsupported', 'error'].includes(m.perm) ? m.perm : 'unknown'; broadcast(L); break;
         case 'settings': if (host && L.state === 'lobby') {
           const s = m.settings || {};
@@ -366,26 +456,44 @@ function createApp(opts = {}) {
           const t = now(); L.startedAt = t; L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
           L.state = L.settings.hideSec > 0 ? 'hiding' : 'playing'; L.round++; L.pings = []; L.events = [];
-          for (const p of ps) { p.startRole = p.role; p.caught = false; p.caughtAt = 0; p.revealedAt = 0; }
-          resetFeatures(L, ps);
+          for (const p of ps) { p.startRole = p.role; p.caught = false; p.caughtAt = 0; p.caughtBy = null; p.revealedAt = 0; }
+          resetFeatures(L, ps); clearRound(L);
           { const sc = scale(L) * 1000, h = L.hideEndsAt;
             L.nextBountyAt = h + 300 * sc; L.camAt = h + 600 * sc; L.compassAt = h + 1080 * sc; L.nextCompassAt = 0; }
           if (L.state === 'playing') L.nextPingAt = t + L.settings.pingSec * 1000;
           else L.nextPingAt = L.hideEndsAt + L.settings.pingSec * 1000;
-          event(L, L.state === 'hiding' ? 'Hiders, go hide!' : 'Hunt is on!');
+          event(L, L.state === 'hiding' ? 'Hiders, go hide!' : 'Hunt is on!'); logEv(L, 'start', {}, L.state === 'hiding' ? '🙈 Head start — hiders go hide' : '🔦 Hunt is on');
+          for (const p of ps) trail(L, p, true);
           broadcast(L);
         } break;
         case 'cam': me.cam = ['granted', 'denied'].includes(m.cam) ? m.cam : 'unknown'; broadcast(L); break;
         case 'decoy': if (me.role === 'hider' && !me.caught && L.settings.features.decoy && (L.state === 'playing' || L.state === 'hiding') && !inCompass(L) && me.decoys > 0 && !me.decoyArmed) {
-          me.decoys--; me.decoyArmed = true; send(ws, viewFor(L, me)); } break;
+          me.decoys--; me.decoyArmed = true; logEv(L, 'decoy', { id: me.id }, `👻 ${me.name} armed a decoy`); send(ws, viewFor(L, me)); } break;
         case 'claim': if (tryClaim(L, me)) broadcast(L); break;
         case 'camPhoto': { const ph = L.photos[me.id];
           if (!ph || !ph.pending || me.role !== 'hider') break;
           const ok = typeof m.data === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(m.data) && m.data.length < 600000;
           L.photos[me.id] = ok && !m.unavailable ? { name: me.name, data: m.data, t: now() } : { name: me.name, unavailable: true, t: now() }; // memory only
+          if (ok && !m.unavailable) logEv(L, 'photo', { id: me.id }, `📷 Sneak-peek photo of ${me.name}`);
           relayPhoto(L, me.id); broadcast(L); } break;
-        case 'catch': if (isHunter(me)) catchHider(L, L.players.get(m.id), me); break;
-        case 'caughtSelf': if (me.role === 'hider') catchHider(L, me, null); break;
+        case 'catch': { const h = L.players.get(m.id);
+          if (host && isHunter(me)) catchHider(L, h, me); // host override: immediate
+          else if (isHunter(me)) claimCatch(L, h, me, 'hunter'); break; }
+        case 'caughtSelf': if (me.role === 'hider') claimCatch(L, me, null, 'hider'); break;
+        case 'catchAnswer': answerCatch(L, me, m.pid, !!m.yes); break;
+        case 'recap': { const r = buildRecap(L); if (r) send(ws, { type: 'recap', recap: r }); break; }
+        case 'hlUpload': { // opt-in highlight cuts for the host's group reel (memory only, 30 min / Play again)
+          if (L.state !== 'ended' || !Array.isArray(m.cuts)) return send(ws, { type: 'hlAck', ok: false, error: 'Only after the game' });
+          const cuts = []; let tot = 0;
+          for (const c of m.cuts.slice(0, 12)) {
+            if (typeof c.data !== 'string' || !/^data:video\/(webm|mp4)[^,]*;base64,[A-Za-z0-9+/=]+$/.test(c.data) || c.data.length > HL_CUT_MAX * 1.37) continue;
+            const dur = Number(c.dur); if (!(dur > 0 && dur <= 10.5)) continue;
+            tot += c.data.length * 0.75; if (tot > HL_MAX) break;
+            cuts.push({ data: c.data, t: Number(c.t) || 0, dur, caption: String(c.caption || '').slice(0, 40) });
+          }
+          L.highlights.set(me.id, { name: me.name, role: me.startRole || me.role, cuts, t: now() });
+          send(ws, { type: 'hlAck', ok: true, n: cuts.length }); broadcast(L); break; }
+        case 'hlFetch': if (host && L.state === 'ended') send(ws, { type: 'hlAll', players: [...L.highlights.entries()].map(([id, h]) => ({ id, ...h })) }); break;
         case 'end': if (host && L.state !== 'ended' && L.state !== 'lobby') endGame(L, activeHiders(L).length ? 'hiders' : 'hunters'); break;
         case 'sync': send(ws, viewFor(L, me)); break;
         case 'rematch': rematch(L); send(ws, viewFor(L, me)); break;
@@ -399,7 +507,7 @@ function createApp(opts = {}) {
   wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); });
   const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
   server.on('close', () => { clearInterval(timer); clearInterval(hb); });
-  return { app, server, wss, lobbies, tick, spawnBounty, distM, oobGrace };
+  return { app, server, wss, lobbies, refs, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
 module.exports = { createApp, distM, bearingDeg, offsetM };

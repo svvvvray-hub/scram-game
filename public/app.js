@@ -1,9 +1,13 @@
 'use strict';
+const CREATOR_IG = 'mmmmmray'; // creator credit on the recap / share image / reel
+const LEGAL_VERSION = '2026-10-22'; // bump to re-ask for 18+/Terms/Privacy consent
+const SHARE_LINK = location.origin + '/play'; // controllable redirect (server: PLAY_REDIRECT_URL); ?ref=<handle> is appended
+window.SHARE_LINK = SHARE_LINK;
 const $ = id => document.getElementById(id);
 const COLORS = ['#3b82f6', '#a855f7', '#14b8a6', '#eab308', '#ec4899', '#22c55e', '#f43f5e', '#06b6d4'];
 let ws, S = null, sess = JSON.parse(localStorage.getItem('scram') || 'null'), offset = 0, watchId = null, myLoc = null;
 let dismissedRound = -1, viewingEnd = false, lastRound = -1, endLayer = null, lastMsgAt = Date.now(), syncSentAt = 0;
-let map, endMap, layers = {}, wakeLock = null, retry = 0, pendingAction = null, lastPingN = 0;
+let nearestId = null, map, endMap, layers = {}, wakeLock = null, retry = 0, pendingAction = null, lastPingN = 0;
 const fmt = ms => { ms = Math.max(0, ms); const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const ago = ts => { const s = Math.round((Date.now() - ts) / 1000); return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`; };
 const tnow = () => Date.now() + offset;
@@ -12,6 +16,10 @@ function toast(t, ms = 2500) { const e = $('toast'); e.textContent = t; e.classL
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 if (!$('name').value) $('name').value = localStorage.getItem('scramName') || '';
+if (!$('ig').value) $('ig').value = localStorage.getItem('scramIg') ? '@' + localStorage.getItem('scramIg') : '';
+$('agree').checked = localStorage.getItem('scramLegal') === LEGAL_VERSION;
+const igLink = h => h ? `<a class="ig" href="https://www.instagram.com/${encodeURIComponent(h)}/" target="_blank" rel="noopener">@${esc(h)}</a>` : '';
+window.CREATOR_IG = CREATOR_IG;
 const qcode = new URLSearchParams(location.search).get('code'); if (qcode) $('code').value = qcode;
 
 function connect() {
@@ -32,11 +40,15 @@ function handle(m) {
   else if (m.type === 'error') { toast(m.error, 4000); if (m.reset) { sess = null; localStorage.removeItem('scram'); show('home'); } }
   else if (m.type === 'left') { resetLocal(); toast('You left the lobby'); }
   else if (m.type === 'gone') { toast(m.kicked ? 'Removed from lobby' : 'Lobby closed'); sess = null; S = null; localStorage.removeItem('scram'); show('home'); }
-  else if (m.type === 'ping') { if (m.locs) { toast(`📡 Ping #${m.n}: hider locations updated`); if (S && S.state === 'playing') { S.last = S.last || {}; for (const [id, l] of Object.entries(m.locs)) if (l) S.last[id] = { ...l, t: m.t }; for (const id of m.hidden || []) delete S.last[id]; S.pingCount = m.n; render(); } } else if (S && me()?.role === 'hider') { toast(m.out ? `💰 Surprise ping — a hunter grabbed the bounty and saw you!` : `📡 Ping #${m.n} — hunters just saw your location!`, 4000); navigator.vibrate?.(300); } }
+  else if (m.type === 'ping') { if (m.locs) { nearestId = m.nearest || null; toast(`📡 Ping #${m.n}: hider locations updated`); if (S && S.state === 'playing') { S.last = S.last || {}; for (const [id, l] of Object.entries(m.locs)) if (l) S.last[id] = { ...l, t: m.t }; for (const id of m.hidden || []) delete S.last[id]; S.pingCount = m.n; render(); } } else if (S && me()?.role === 'hider') { toast(m.out ? `💰 Surprise ping — a hunter grabbed the bounty and saw you!` : `📡 Ping #${m.n} — hunters just saw your location!`, 4000); navigator.vibrate?.(300); } }
   else if (m.type === 'chime') { playChime(); navigator.vibrate?.([200, 100, 200]); toast('🔔 You chimed! A hunter is within 40 m', 5000); fx('🔔 You chimed at the last ping — a hunter is close!'); }
   else if (m.type === 'chimeNearby') { const e = $('chimeNote'); e.textContent = `🔔 ${m.n > 1 ? m.n + ' hiders' : 'A hider'} chimed nearby!`; e.classList.remove('hidden'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.add('hidden'), 15000); toast(e.textContent, 4000); }
   else if (m.type === 'bounty') { toast(m.effect === 'wipe' ? '💰 Bounty! Your next ping is wiped — hunters will see nothing.' : '💰 Bounty! Surprise ping of all hiders.', 5000); if (m.effect === 'wipe') fx('💰 Cloaked: your next ping is wiped.'); }
   else if (m.type === 'camRequest') takePhoto();
+  else if (m.type === 'infected') { toast('🧟 You were caught — you are now a HUNTER! You will get pings now.', 6000); navigator.vibrate?.([300, 100, 300]); }
+  else if (m.type === 'catchPrompt') { navigator.vibrate?.([200, 100, 200]); toast(m.by === 'hider' ? `🙋 ${m.hider} says they were caught — confirm?` : `🎯 ${m.hunter} says they caught you — confirm?`, 5000); }
+  else if (m.type === 'recap') { window.RecapUI?.set(m.recap); }
+  else if (m.type === 'hlAck' || m.type === 'hlAll') window.Reel?.onMsg(m);
   else if (m.type === 'camPeek') { photos[m.id] = m; renderPhotos(); if (m.data || m.unavailable) toast(`📷 Sneak peek: ${m.name}${m.data ? '' : ' — photo unavailable'}`); }
   else if (m.type === 'compass') { compassData = m; renderCompass(); }
   else if (m.type === 'startBlocked') { const names = m.outside.map(o => o.name + (o.noGps ? ' (no GPS)' : '')).join(', '); if (confirm(`Outside the playing field: ${names}. Start anyway?`)) sendMsg({ type: 'start', force: true }); else toast('Outside: ' + names, 5000); }
@@ -75,9 +87,19 @@ setInterval(() => { if (myLoc) sendLoc(myLoc); }, 15000); // heartbeat keeps "fr
 function setGps(t) { $('gpsStatus').textContent = t; $('btnGps').classList.toggle('hidden', t.startsWith('✅')); }
 $('btnGps').onclick = () => { watchId !== null && navigator.geolocation.clearWatch(watchId); watchId = null; startGps(); };
 
+// Screen wake lock: held while a round is running or a recording is on; re-acquired on visibilitychange, released at game end.
+const wantWake = () => !!((S && (S.state === 'playing' || S.state === 'hiding')) || window.Rec?.recording);
+let wakeBusy = false;
 async function wake() {
-  try { if ('wakeLock' in navigator && !wakeLock && document.visibilityState === 'visible') { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.onrelease = () => wakeLock = null; } } catch {}
+  if (!('wakeLock' in navigator)) return;
+  if (!wantWake()) return releaseWake();
+  if (wakeLock || wakeBusy || document.visibilityState !== 'visible') return;
+  wakeBusy = true;
+  try { const l = await navigator.wakeLock.request('screen'); if (!wantWake()) l.release().catch(() => {}); else { wakeLock = l; l.addEventListener('release', () => { if (wakeLock === l) wakeLock = null; }); } } catch {}
+  finally { wakeBusy = false; }
 }
+function releaseWake() { const l = wakeLock; wakeLock = null; if (l) l.release().catch(() => {}); }
+window.Wake = { sync: wake, release: releaseWake, get held() { return !!wakeLock; }, get supported() { return 'wakeLock' in navigator; } };
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { wake(); if (ws?.readyState !== 1) { try { ws.close(); } catch {} } else sendMsg({ type: 'sync' }); if (myLoc) sendLoc(myLoc); }
 });
@@ -158,7 +180,12 @@ function renderCompass() {
 function go(type) {
   const name = $('name').value.trim(); if (!name) return toast('Enter your name');
   localStorage.setItem('scramName', name);
-  const msg = type === 'create' ? { type, name } : { type, name, code: $('code').value.trim().toUpperCase() };
+  if (!$('agree').checked) return toast('Please confirm you are 18+ and agree to the Terms and Privacy Policy', 4000);
+  localStorage.setItem('scramLegal', LEGAL_VERSION);
+  const igRaw = $('ig').value.trim(), ig = Recap.igHandle(igRaw);
+  if (igRaw && !ig) return toast('Instagram handle: letters, numbers, . and _ (max 30)');
+  if (ig) localStorage.setItem('scramIg', ig); else localStorage.removeItem('scramIg');
+  const msg = type === 'create' ? { type, name, ig, agreed: true, legal: LEGAL_VERSION } : { type, name, ig, agreed: true, legal: LEGAL_VERSION, code: $('code').value.trim().toUpperCase() };
   if (type === 'join' && msg.code.length < 4) return toast('Enter the join code');
   startGps(); wake(); unlockAudio();
   if (ws?.readyState === 1) sendMsg(msg); else pendingAction = msg;
@@ -182,9 +209,13 @@ function renderLobby() {
       : `<span class="pill ${p.role}">${p.role === 'hunter' ? '🔦 hunter' : '🙈 hider'}</span>`;
     const cam = p.role === 'hider' && S.settings.features?.cam ? (p.cam === 'granted' ? '<span class="pill ok">📷</span>' : p.cam === 'denied' ? '<span class="pill bad">no 📷</span>' : '') : '';
     const outP = S.field && p.out ? '<span class="pill out">outside field</span>' : '';
-    return `<li><span class="nm">${esc(p.name)}${cam}${outP}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
+    return `<li><span class="nm">${esc(p.name)}${igLink(p.ig)}${cam}${outP}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
   }).join('');
-  for (const b of document.querySelectorAll('[data-role]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.role); sendMsg({ type: 'role', id: p.id, role: p.role === 'hunter' ? 'hider' : 'hunter' }); };
+  for (const b of document.querySelectorAll('[data-role]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.role);
+    if (p.role === 'hunter' && S.players.filter(x => x.role === 'hunter').length <= 1) return toast('Need at least 1 hunter');
+    sendMsg({ type: 'role', id: p.id, role: p.role === 'hunter' ? 'hider' : 'hunter' }); };
+  { const nh = S.players.filter(p => p.role === 'hunter').length; $('roleCounts').textContent = `· 🔦 ${nh} hunter${nh === 1 ? '' : 's'} · 🙈 ${S.players.length - nh} hider${S.players.length - nh === 1 ? '' : 's'}`;
+    $('sHunters').max = Math.max(1, S.players.length - 1); }
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   set('sGame', +(st.gameSec / 60).toFixed(2)); set('sPing', st.pingSec); set('sHide', st.hideSec);
   $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed;
@@ -306,7 +337,7 @@ function renderGame() {
   const hiders = S.players.filter(p => p.role === 'hider' || p.caught);
   if (hunter) hiders.forEach((p, i) => {
     const lp = last[p.id];
-    if (lp && !p.caught) { marker('x' + p.id, lp, COLORS[i % COLORS.length], `🙈 ${esc(p.name)} · ${ago(lp.t - lp.age - offset)}`); pts.push([lp.lat, lp.lng]); }
+    if (lp && !p.caught) { marker('x' + p.id, lp, COLORS[i % COLORS.length], `${p.id === nearestId ? '🎯 ' : '🙈 '}${esc(p.name)} · ${ago(lp.t - lp.age - offset)}${p.id === nearestId ? ' · nearest' : ''}`); pts.push([lp.lat, lp.lng]); }
   });
   if (S.bounty) {
     const b = S.bounty;
@@ -324,8 +355,9 @@ function renderGame() {
   if (S.field && !map._fitted) { const fb = fieldBounds(S.field); pts.forEach(p => fb.extend(p)); setTimeout(() => { if (map) { map.invalidateSize(); map.fitBounds(fb.pad(.05)); } }, 120); map._fitted = true; }
   if (pts.length && (!map._fitted || (S.pingCount !== lastPingN && hunter))) { map.fitBounds(L.latLngBounds(pts).pad(.3), { maxZoom: 17 }); map._fitted = true; lastPingN = S.pingCount; }
   if (hunter) {
-    $('hiderBtns').innerHTML = hiders.map(p => `<button ${p.caught ? 'disabled' : ''} class="${p.caught ? '' : 'hunt'}" data-catch="${p.id}"><span>${p.caught ? '✅' : '🙈'} ${esc(p.name)}</span><span>${p.caught ? 'caught' : 'Mark caught'}</span></button>`).join('') || '<p class="note">No hiders left</p>';
-    for (const b of document.querySelectorAll('[data-catch]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.catch); if (confirm(`Mark ${p.name} as caught?`)) sendMsg({ type: 'catch', id: p.id }); };
+    const pend = id => (S.catches || []).some(c => c.hiderId === id);
+    $('hiderBtns').innerHTML = hiders.map(p => `<button ${p.caught ? 'disabled' : ''} class="${p.caught ? '' : 'hunt'}" data-catch="${p.id}"><span>${p.caught ? '✅' : p.id === nearestId ? '🎯' : '🙈'} ${esc(p.name)}</span><span>${p.caught ? 'caught' : pend(p.id) ? '⏳ confirming…' : 'I caught them'}</span></button>`).join('') || '<p class="note">No hiders left</p>';
+    for (const b of document.querySelectorAll('[data-catch]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.catch); if (confirm(`Mark ${p.name} as caught?`)) { sendMsg({ type: 'catch', id: p.id }); if (S.you !== S.host) toast(`⏳ Waiting for ${p.name} to confirm (20 s)…`); } };
   } else {
     const dOn = S.settings.features?.decoy && !S.compass;
     $('btnDecoy').classList.toggle('hidden', !S.settings.features?.decoy);
@@ -336,11 +368,24 @@ function renderGame() {
     $('revealed').textContent = S.revealedAt ? `Hunters last saw your location ${ago(S.revealedAt - offset)}.` : (S.settings.showRevealed ? 'Not revealed yet.' : '');
   }
   if (hunter) renderPhotos();
+  renderCatchBox();
   renderCompass();
   const ev = S.events[S.events.length - 1];
   $('banner').classList.toggle('hidden', !ev || tnow() - ev.t > 6000); if (ev) $('banner').textContent = ev.text;
 }
-$('btnCaughtSelf').onclick = () => { if (confirm('Confirm you were caught?')) sendMsg({ type: 'caughtSelf' }); };
+$('btnCaughtSelf').onclick = () => { if (confirm('Confirm you were caught?')) { sendMsg({ type: 'caughtSelf' }); toast('⏳ Waiting for a hunter to confirm (20 s)…', 4000); } };
+// pending catch claims: the other side (or the host) confirms within 20 s
+function renderCatchBox() {
+  const list = (S && (S.state === 'playing' || S.state === 'hiding') ? S.catches || [] : []), mine = list.filter(c => c.canAnswer || c.hiderId === S.you);
+  $('catchBox').classList.toggle('hidden', !mine.length); if (!mine.length) return;
+  $('catchBox').innerHTML = mine.map(c => { const left = Math.max(0, Math.ceil((c.expiresAt - tnow()) / 1000)), host = S.you === S.host;
+    const party = c.by === 'hider' ? c.hiderId !== S.you : c.hiderId === S.you;
+    const txt = c.by === 'hider' ? `🙋 ${esc(c.hider)} says they were caught${c.hunter ? ' by ' + esc(c.hunter) : ''}` : `🎯 ${esc(c.hunter)} says they caught ${c.hiderId === S.you ? 'you' : esc(c.hider)}`;
+    const btns = c.canAnswer && (party || host) && !(c.by === 'hider' && c.hiderId === S.you) ? `<button class="small primary" data-cy="${c.pid}">${party ? '✅ Confirm' : '👑 Confirm'}</button><button class="small danger" data-cn="${c.pid}">${party ? '✕ No' : '👑 Cancel'}</button>` : '<span class="note">waiting…</span>';
+    return `<div class="row"><span>${txt} · ${left}s</span>${btns}</div>`; }).join('');
+  for (const b of document.querySelectorAll('[data-cy]')) b.onclick = () => sendMsg({ type: 'catchAnswer', pid: b.dataset.cy, yes: true });
+  for (const b of document.querySelectorAll('[data-cn]')) b.onclick = () => sendMsg({ type: 'catchAnswer', pid: b.dataset.cn, yes: false });
+}
 $('btnEnd').onclick = () => { if (confirm('End the game for everyone?')) sendMsg({ type: 'end' }); };
 
 function warnings() {
@@ -351,6 +396,7 @@ function warnings() {
   else if (myLoc.acc > 100) w.push(`GPS accuracy is poor (±${Math.round(myLoc.acc)} m).`);
   if (m.role === 'hunter') S.players.filter(p => p.role === 'hider' && !p.caught && p.stale).forEach(p => w.push(`${p.name}'s GPS is stale/offline — their next ping may be old.`));
   if (ws?.readyState !== 1) w.push('Disconnected — reconnecting…');
+  if (!('wakeLock' in navigator)) w.push('🔆 Screen wake lock not supported here — keep the screen on manually.');
   $('warn').innerHTML = w.map(esc).join('<br>'); $('warn').classList.toggle('hidden', !w.length);
 }
 setInterval(() => {
@@ -358,7 +404,7 @@ setInterval(() => {
   const t = tnow();
   if (S.state === 'hiding') { $('clock').textContent = fmt(S.hideEndsAt - t); $('pingClock').textContent = 'Head start'; $('hideClock').textContent = fmt(S.hideEndsAt - t); }
   else if (S.state === 'playing') { $('clock').textContent = fmt(S.endsAt - t); $('pingClock').innerHTML = S.compass ? '🧭 <b>SUDDEN<br>DEATH</b>' : `Next ping<br><b>${fmt(S.nextPingAt - t)}</b>`; }
-  warnings(); oobBanner();
+  warnings(); oobBanner(); if (S.catches?.length) renderCatchBox();
 }, 250);
 function oobBanner() {
   const running = S.state === 'playing' || S.state === 'hiding', m = me(), on = running && !!S.outSince && m;
@@ -376,7 +422,7 @@ function renderEnd() {
   $('winner').textContent = S.winner === 'hiders' ? '🙈 Hiders win!' : '🔦 Hunters win!';
   const hiders = S.players.filter(p => p.caught || p.role === 'hider');
   $('summary').innerHTML = hiders.map((p, i) => { const n = S.pings.filter(pg => pg.locs[p.id]).length;
-    return `<div class="sumrow"><b style="color:${COLORS[i % COLORS.length]}">● ${esc(p.name)}</b> — ${p.caught ? 'caught at ' + fmt(p.caughtAt - S.startedAt) : 'survived'} · ${n} ping${n === 1 ? '' : 's'}</div>`; }).join('') +
+    return `<div class="sumrow"><b style="color:${COLORS[i % COLORS.length]}">● ${esc(p.name)}</b>${igLink(p.ig)} — ${p.caught ? 'caught at ' + fmt(p.caughtAt - S.startedAt) : 'survived'} · ${n} ping${n === 1 ? '' : 's'}</div>`; }).join('') +
     `<p class="note">${S.pingCount} pings · ${S.events.map(e => esc(e.text)).join(' · ')}</p>`;
   if (!endMap) { endMap = L.map('endMap'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(endMap); }
   if (endLayer) endLayer.remove(); endLayer = L.layerGroup().addTo(endMap); drawFieldLayers(L.layerGroup().addTo(endLayer), S.field);
@@ -389,8 +435,10 @@ function renderEnd() {
     trail.forEach((ll, k) => L.circleMarker(ll, { radius: 5, color: c, fillOpacity: 1 }).bindTooltip(`${esc(p.name)} #${k + 1}`).addTo(endLayer));
   });
   setTimeout(() => { endMap.invalidateSize(); if (all.length) endMap.fitBounds(L.latLngBounds(all).pad(.2)); else endMap.setView([myLoc?.lat || 0, myLoc?.lng || 0], 15); }, 50);
+  $('btnFollow').href = `https://www.instagram.com/${CREATOR_IG}/`;
+  if (window.RecapUI?.data?.round === S.round) RecapUI.render(); else sendMsg({ type: 'recap' });
 }
-$('btnHome').onclick = () => { viewingEnd = false; dismissedRound = S ? S.round : -1; sendMsg({ type: 'rematch' }); if (S && S.state === 'lobby') render(); };
+$('btnHome').onclick = () => { window.RecapUI?.clear(); window.Reel?.clear(); window.Rec?.releaseSaved?.(); viewingEnd = false; dismissedRound = S ? S.round : -1; sendMsg({ type: 'rematch' }); if (S && S.state === 'lobby') render(); };
 function leaveLobby(ask) { if (ask && !confirm('Leave this lobby? You will be removed from the game.')) return; if (ws?.readyState === 1 && sess) sendMsg({ type: 'leave' }); else resetLocal(); setTimeout(() => { if (sess) resetLocal(); }, 3000); }
 $('btnLeaveEnd').onclick = () => leaveLobby(false); $('btnLeaveLobby').onclick = () => leaveLobby(false); $('btnLeaveGame').onclick = () => leaveLobby(true);
 
@@ -403,6 +451,6 @@ function render() {
   else if (S.state === 'lobby' && viewingEnd) { // someone started a rematch; keep showing my summary until I tap Play again
     $('rematchNote').textContent = '🔁 The lobby is back in the waiting room — tap Play again to join the next round.'; $('rematchNote').classList.remove('hidden');
   } else { viewingEnd = false; $('rematchNote').classList.add('hidden'); if (S.state === 'lobby') renderLobby(); else renderGame(); }
-  if (S.state !== 'ended') wake();
+  wake();
 }
 connect();

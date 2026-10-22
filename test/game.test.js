@@ -25,10 +25,10 @@ const until = async (fn, ms = 3000) => { const t = Date.now(); while (!fn()) { i
 const HIDER_LAT = [37.111111, 37.222222];
 
 async function setup(a, settings) {
-  const host = client(a.url, 'Hunter'); await host.open; host.send({ type: 'create', name: 'Hunter' }); await until(() => host.joined);
+  const host = client(a.url, 'Hunter'); await host.open; host.send({ type: 'create', agreed: true, name: 'Hunter' }); await until(() => host.joined);
   const code = host.joined.code;
   const hs = [0, 1].map(i => client(a.url, 'Hider' + i));
-  for (const h of hs) { await h.open; h.send({ type: 'join', code, name: h.name }); await until(() => h.joined); }
+  for (const h of hs) { await h.open; h.send({ type: 'join', agreed: true, code, name: h.name }); await until(() => h.joined); }
   await until(() => host.state && host.state.players.length === 3);
   host.send({ type: 'loc', lat: 37.5, lng: -122.5, acc: 5 });
   hs.forEach((h, i) => h.send({ type: 'loc', lat: HIDER_LAT[i], lng: -122.1, acc: 8 }));
@@ -86,7 +86,9 @@ test('catching: hunter catch + self-report, caught becomes hunter, all caught en
   await until(() => hs[0].state.players.find(p => p.id === hs[0].joined.id).caught);
   assert.equal(hs[0].state.players.find(p => p.id === hs[0].joined.id).role, 'hunter');
   await until(() => hs[0].state.last && Object.keys(hs[0].state.last).length > 0); // converted hunter gets ping data
-  hs[1].send({ type: 'caughtSelf' });
+  hs[1].send({ type: 'caughtSelf' }); // now needs a hunter's (or host's) confirmation
+  await until(() => host.msgs.some(m => m.type === 'catchPrompt'));
+  host.send({ type: 'catchAnswer', pid: host.msgs.find(m => m.type === 'catchPrompt').pid, yes: true });
   await until(() => host.state.state === 'ended');
   assert.equal(host.state.winner, 'hunters');
   a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
@@ -127,7 +129,7 @@ test('3 consecutive rounds via rematch: same code/players, roles restored, no st
     const t0 = Date.now(); host.send({ type: 'start' });
     await until(() => host.state.state === 'playing' && host.state.round === round);
     assert.ok(!host.state.last || Object.keys(host.state.last).length === 0, 'no old ping state at round start');
-    if (round === 2) for (const c of [host, ...hs]) if (host.state.players.find(p => p.id === c.joined.id).role === 'hider') c.send({ type: 'caughtSelf' });
+    if (round === 2) for (const c of [host, ...hs]) if (host.state.players.find(p => p.id === c.joined.id).role === 'hider') { c.send({ type: 'caughtSelf' }); await until(() => host.state.catches.some(x => x.hiderId === c.joined.id)); host.send({ type: 'catchAnswer', pid: host.state.catches.find(x => x.hiderId === c.joined.id).pid, yes: true }); }
     await until(() => host.state.state === 'ended', 3000);
     assert.equal(host.state.winner, round === 2 ? 'hunters' : 'hiders');
     if (round !== 2) {
@@ -156,7 +158,7 @@ test('leave: removed for everyone, host transfers, can rejoin as new, last leave
   await until(() => host.state.players.length === 2);
   const r = client(a.url, 'r'); await r.open; r.send({ type: 'rejoin', code, token: tok });
   await until(() => r.msgs.length); assert.equal(r.msgs[0].type, 'error', 'old session cannot rejoin');
-  hs[0].send({ type: 'join', code, name: 'Hider0' }); await until(() => host.state.players.length === 3);
+  hs[0].send({ type: 'join', agreed: true, code, name: 'Hider0' }); await until(() => host.state.players.length === 3);
   assert.ok(!host.state.players.some(p => p.id === id0), 'rejoined as a new player');
   host.send({ type: 'leave' });
   await until(() => hs[1].state.host !== host.joined.id);

@@ -25,13 +25,13 @@ async function open(page, url) { await page.goto(url); await page.waitForSelecto
   // denied permission path, separate context without camera grant and without fake-ui auto-accept is not possible per-context; simulate by stubbing getUserMedia
   const den = await browser.newContext({ ...devices['Pixel 7'] }); const dp = await den.newPage(); const dErr = []; dp.on('pageerror', e => dErr.push(e.message));
   await dp.addInitScript(() => { navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('denied', 'NotAllowedError')); });
-  await open(dp, URL); await dp.click('#recBtn'); await sleep(800);
+  await open(dp, URL); await dp.click('#recBtn'); await dp.locator('#recOk:visible').click({ timeout: 1500 }).catch(() => {}); await sleep(800);
   check(/Camera blocked/.test(await dp.textContent('#toast')) && !(await dp.evaluate(() => Rec.recording)) && !dErr.length, 'denied permission -> friendly toast, not recording, no crash');
   await den.close();
 
-  await open(hunter.page, URL); await hunter.page.fill('#name', 'Murray'); await hunter.page.click('#btnCreate');
+  await open(hunter.page, URL); await hunter.page.fill('#name', 'Murray'); await hunter.page.check('#agree'); await hunter.page.click('#btnCreate');
   await hunter.page.waitForSelector('#lobbyCode:not(:empty)'); const code = (await hunter.page.textContent('#lobbyCode')).trim();
-  await open(hider.page, URL + '/j/' + code); await hider.page.fill('#name', 'Alice'); await hider.page.click('#btnJoin'); await hider.page.waitForSelector('#lobbyCode:not(:empty)');
+  await open(hider.page, URL + '/j/' + code); await hider.page.fill('#name', 'Alice'); await hider.page.check('#agree'); await hider.page.click('#btnJoin'); await hider.page.waitForSelector('#lobbyCode:not(:empty)');
   await hunter.page.waitForFunction(() => document.querySelectorAll('#playerList li').length === 2 && document.querySelectorAll('.pill.ok').length >= 2, null, { timeout: 20000 });
   await hider.page.waitForSelector('#camPanel:not(.hidden)'); await hider.page.click('#btnReadyCam');
   await hunter.page.waitForFunction(() => S.players.some(p => p.cam === 'granted'), null, { timeout: 10000 });
@@ -40,7 +40,7 @@ async function open(page, url) { await page.goto(url); await page.waitForSelecto
   await hider.page.waitForFunction(() => S.state === 'playing', null, { timeout: 20000 });
   check(await hider.page.isVisible('#recBtn'), 'Record button visible in game');
   const t0 = Date.now();
-  await hider.page.click('#recBtn');
+  await hider.page.click('#recBtn'); await hider.page.locator('#recOk:visible').click({ timeout: 1500 }).catch(() => {});
   await hider.page.waitForFunction(() => Rec.recording, null, { timeout: 10000 });
   const dual = await hider.page.evaluate(() => Rec.dual);
   console.log('dual mode:', dual, 'mime:', await hider.page.evaluate(() => Rec.pickMime()));
@@ -97,7 +97,7 @@ async function open(page, url) { await page.goto(url); await page.waitForSelecto
   await hunter.page.waitForFunction(() => Object.values(S.photos || {}).some(p => p.data) || [...document.querySelectorAll('#camStrip img')].length > 0, null, { timeout: 45000 }).catch(() => {});
   check(await hunter.page.evaluate(() => [...document.querySelectorAll('#camStrip img')].length > 0), 'cam peek photo delivered while hider records (reused recording stream)');
   check(await hider.page.evaluate(() => Rec.recording), 'recording still running after cam peek');
-  if (dual) { await hider.page.click('#recStop'); await sleep(1000); await hider.page.click('#recBtn'); await hider.page.waitForFunction(() => Rec.recording); await sleep(1500); }
+  if (dual) { await hider.page.click('#recStop'); await sleep(1000); await hider.page.click('#recBtn'); await hider.page.locator('#recOk:visible').click({ timeout: 1500 }).catch(() => {}); await hider.page.waitForFunction(() => Rec.recording); await sleep(1500); }
   // flip only in single mode; in dual mode the flip button is hidden
   if (!dual) { await hider.page.click('#recFlip'); await hider.page.waitForFunction(() => Rec.clips.length === 1 && Rec.recording, null, { timeout: 10000 }); await sleep(2000); }
   await hider.page.click('#recStop');

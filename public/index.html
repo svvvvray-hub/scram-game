@@ -7,11 +7,15 @@
 <section id="home" class="screen">
   <h1>🏃 Scram</h1><p class="sub">GPS hide &amp; seek in your browser</p>
   <label>Your name<input id="name" maxlength="20" autocomplete="nickname" placeholder="e.g. Murray"></label>
+  <label>Instagram (optional)<input id="ig" maxlength="80" autocomplete="off" autocapitalize="none" placeholder="@yourhandle"></label>
+  <p class="note igNote">Shown only in the lobby and the end-of-game recap / share image — never during a game.</p>
+  <label class="chk agree"><input id="agree" type="checkbox"> <span>I'm 18+ and agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a></span></label>
   <button id="btnCreate" class="big primary" disabled>Connecting…</button>
   <div class="or">or join</div>
   <label>Join code<input id="code" maxlength="5" autocapitalize="characters" placeholder="ABCDE"></label>
   <button id="btnJoin" class="big" disabled>Join game</button>
   <p class="note">No accounts. Locations live only in server memory and are deleted when the lobby ends (max ~1 h).</p>
+  <p class="legalLinks note"><a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
 </section>
 
 <section id="lobby" class="screen hidden">
@@ -19,7 +23,7 @@
     <img id="qr" alt="QR code"><div><button id="btnShare" class="small">Share link</button> <span id="joinUrl" class="mono"></span></div></div>
   <div id="gpsStatus" class="gps"></div>
   <button id="btnGps" class="big">Enable location</button>
-  <p id="hostName" class="note"></p><h3>Players</h3><ul id="playerList" class="players"></ul>
+  <p id="hostName" class="note"></p><h3>Players <span id="roleCounts" class="note"></span></h3><ul id="playerList" class="players"></ul>
   <div id="fieldPanel">
     <h3>Playing field</h3>
     <div id="fieldSummary" class="note"></div>
@@ -41,7 +45,8 @@
       <label>Head start (sec)<input id="sHide" type="number" min="0" step="10"></label>
       <label>Hunters (random)<input id="sHunters" type="number" min="1" value="1"></label>
     </div>
-    <label class="chk"><input id="sBecome" type="checkbox"> Caught hiders become hunters</label>
+    <label class="chk"><input id="sBecome" type="checkbox"> 🧟 Caught hiders join the hunters (infection)</label>
+    <p class="note">Tap a role pill to switch hunter/hider (at least 1 hunter), or randomize with the hunter count above.</p>
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
     <h3>Power-ups</h3>
     <div id="features">
@@ -79,7 +84,8 @@
   <div id="hideCover" class="hidden"><div>🙈</div><div>Hiders are hiding…</div><div id="hideClock" class="code"></div></div>
   <div id="bottom">
     <div id="warn" class="warn hidden"></div>
-    <div id="hunterPanel" class="hidden"><div id="chimeNote" class="chimeNote hidden"></div><div id="camStrip" class="camStrip"></div><div id="hiderBtns"></div></div>
+    <div id="catchBox" class="catchBox hidden"></div>
+    <div id="hunterPanel" class="hidden"><div id="chimeNote" class="chimeNote hidden"></div><div id="camStrip" class="camStrip"></div><div class="note"><b>🙌 I caught someone</b> — tap who (they confirm, or the host):</div><div id="hiderBtns"></div></div>
     <div id="hiderPanel" class="hidden"><div id="revealed" class="note"></div><div id="hiderFx" class="note"></div>
       <button id="btnDecoy" class="big decoy">👻 Ghost decoy <span id="decoyCount"></span></button>
       <button id="btnCaughtSelf" class="big danger">I got caught</button></div>
@@ -89,7 +95,33 @@
 </section>
 
 <section id="end" class="screen hidden">
-  <h1 id="winner"></h1><div id="summary"></div><div id="endMap"></div>
+  <h1 id="winner"></h1><div id="summary"></div>
+  <div id="recap" class="hidden">
+    <div id="endMapWrap"><div id="endMap"></div><div id="heatLegend" class="heatLegend hidden"><span class="hl1">● hiders spent time</span> <span class="hl2">● hunters searched</span></div></div>
+    <div class="replayBar"><button id="rPlay" class="small primary">▶ Replay</button><input id="rScrub" type="range" min="0" max="1000" value="1000"><span id="rTime" class="mono"></span></div>
+    <label class="chk"><input id="rHeat" type="checkbox"> 🔥 Heat map (hiders vs hunters)</label>
+    <h3>🏅 Awards</h3><div id="awards"></div>
+    <h3>🏆 Trophies</h3><div id="trophies" class="trophies"></div>
+    <div id="recapPhoto"></div>
+    <button id="btnShareRecap" class="big primary">📤 Share recap</button>
+    <div id="reelBox" class="reelBox"><h3>🎬 Highlight reel</h3><div id="reelStatus" class="note"></div>
+      <video id="reelVid" class="hidden" controls playsinline></video>
+      <div class="seg"><button id="btnReel" class="small">🎬 Build my reel</button><button id="btnReelSave" class="small hidden">⬇ Save</button><button id="btnReelShare" class="small hidden">↗ Share</button></div>
+      <div id="hlConsent" class="note hidden">Optional: send <b>only your short highlight cuts</b> (each &lt;10 s, max ~15 MB) to the host so their phone can stitch a group reel. Held in server memory for this lobby only, deleted after 30 min or at Play again. Nothing else is uploaded.</div>
+      <button id="btnSendHl" class="small hidden">📨 Send my highlights to host</button>
+      <div id="groupBox" class="hidden"><b>👥 Group reel</b> <span id="groupStatus" class="note"></span><br><button id="btnGroupReel" class="small">🎞 Build group reel</button>
+        <video id="groupVid" class="hidden" controls playsinline></video><div class="seg"><button id="btnGroupSave" class="small hidden">⬇ Save</button><button id="btnGroupShare" class="small hidden">↗ Share</button></div></div>
+    </div>
+    <div id="viralBox" class="reelBox"><h3>🔥 Make it viral</h3><p class="note">A vertical 9:16 clip (15-30 s) from your highlights: best moment first, big captions, mini-map, and a share link.</p>
+      <label class="chk"><input id="vMusic" type="checkbox" checked> 🥁 Beat soundtrack (generated, no copyrighted music)</label>
+      <button id="btnViral" class="big viral">🔥 Make it viral</button><div id="viralStatus" class="note"></div>
+      <video id="viralVid" class="hidden vertical" controls playsinline></video>
+      <div class="seg"><button id="btnViralSave" class="small hidden">⬇ Save</button><button id="btnViralShare" class="small hidden">↗ Share</button></div></div>
+    <h3>🕑 Timeline</h3><ol id="timeline" class="timeline"></ol>
+    <a id="btnFollow" class="big follow" target="_blank" rel="noopener">📸 Follow the creator on Instagram</a>
+    <p class="legalLinks note"><a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
+  </div>
+  <div id="sharePreview" class="hidden"><img id="shareImg" alt="recap image"><div class="note">Recap image · tap to close</div></div>
   <p id="rematchNote" class="note hidden"></p>
   <button id="btnHome" class="big primary">🔁 Play again (same lobby)</button>
   <button id="btnLeaveEnd" class="big danger">Leave lobby</button>
@@ -102,10 +134,16 @@
 <div id="recDock"><div id="recBar" class="recBar hidden"><span class="recDot"></span><b>REC</b> <span id="recTime" class="mono">00:00</span> <span id="recMode" class="note"></span>
     <button id="recFlip" class="small">🔄 Flip</button><button id="recStop" class="small danger">⏹ Stop</button></div>
   <button id="recBtn" class="recBtn" title="Record (stays on this phone)">⏺ Record</button>
-  <button id="clipsBtn" class="small hidden">🎞 0</button></div>
+  <button id="clipsBtn" class="small hidden">🎞 0</button><button id="recQBtn" class="small" title="Recording quality">⚙ Quality</button></div>
+<div id="recNotice" class="hidden"><div class="box"><b>⏺ Before you record</b><p>Get permission from anyone you record. Recording private conversations without consent can be illegal (e.g. California). Clips stay on your phone.</p>
+  <div class="seg"><button id="recOk" class="small primary">Got it</button><button id="recCancel" class="small">Cancel</button></div></div></div>
 <div id="clipSheet" class="hidden"><div class="sheetHead"><b>🎞 My clips</b><button id="clipClose" class="small">✕</button></div>
-  <p class="note">Clips stay on this device only — never uploaded. Download or share them before leaving.</p><ul id="clipList" class="players"></ul></div>
+  <b>🎚 Quality</b><div class="seg qseg" id="recQuality"></div><p id="qEst" class="note"></p>
+  <p class="note">Clips stay on this device only — never uploaded. Download or share them before leaving. Saved clips are dropped from memory after saving (kept until the highlight reel is built during a game).</p><ul id="clipList" class="players"></ul></div>
 <script src="vendor/leaflet.js"></script>
 <script src="field.js"></script>
+<script src="recap.js"></script>
 <script src="app.js"></script>
-<script src="record.js"></script></body></html>
+<script src="record.js"></script>
+<script src="recapui.js"></script>
+<script src="reel.js"></script></body></html>
