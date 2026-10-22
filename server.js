@@ -24,6 +24,13 @@ function makeCode(lobbies) {
   return c;
 }
 const FEATURES = ['decoy', 'chime', 'bounty', 'cam', 'compass'];
+// Game modes: presets over the individual toggles. Pings, the field and catch confirmation are always on.
+const MODES = {
+  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off' },
+  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal' },
+  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos' },
+  custom: { label: 'Custom', desc: 'Pick every toggle yourself.' },
+};
 const DEFAULT_GAME_SEC = clampNum0(process.env.GAME_MIN, 0.5, 360, 20) * 60; // dev/test: GAME_MIN=2 node server.js
 function clampNum0(v, lo, hi, d) { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; }
 // ---- geo helpers (metres) ----
@@ -57,6 +64,7 @@ function createApp(opts = {}) {
   // Share links: /play is a controllable 302 (point it at a custom domain with PLAY_REDIRECT_URL); /p/<code> deep-links a lobby.
   // ?ref=<handle> visits are counted in memory and logged.
   const refs = new Map(), env = opts.env || process.env;
+  const DEFAULT_MODE = MODES[opts.defaultMode ?? env.SCRAM_DEFAULT_MODE] ? (opts.defaultMode ?? env.SCRAM_DEFAULT_MODE) : 'classic'; // test hook: legacy suites use 'custom' (everything on)
   const MAX_PLAYERS = Math.round(clampNum0(opts.maxPlayers ?? env.MAX_PLAYERS, 2, 500, 20)); // per lobby
   app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = Recap.igHandle(req.query.ref); if (h) { refs.set(h, (refs.get(h) || 0) + 1); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
   const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
@@ -71,11 +79,11 @@ function createApp(opts = {}) {
   app.get('/api/rules', (req, res) => res.json({ gameMin: DEFAULT_GAME_SEC / 60, pingSec: 60, hideSec: 120, oobGraceSec: 30, catchConfirmSec: 20, catchRadiusM: 30,
     decoys: 2, decoyMinM: 30, decoyMaxM: 150, chimeM: 40, chimeVolDefault: 25, bountyEveryMin: 5, bountyRadiusM: 15, camMin: 10, compassFromMin: 18,
     dropEveryMin: 3, chaosEverySec: 90, noDropsFirstMin: 2, dropTtlMin: 2.5, pickupM: 15, pickupSec: 5, cooldownMin: 3, dropMinM: 50, dropMaxM: 200,
-    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60, maxPlayers: MAX_PLAYERS }));
+    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60, maxPlayers: MAX_PLAYERS, defaultMode: 'classic', modes: MODES, tiles: env.DARK_TILES_URL ? { url: env.DARK_TILES_URL, attr: env.DARK_TILES_ATTR || '© OpenStreetMap contributors' } : null, needFixLeadSec: 5, gpsFastSec: 4, gpsSlowSec: 15, gpsStillM: 5, gpsEnemyM: 150 }));
   app.get('/healthz', (req, res) => res.json({ ok: true, lobbies: lobbies.size }));
   app.get('/j/:code', (req, res) => res.redirect('/?code=' + encodeURIComponent(req.params.code.toUpperCase())));
   app.get('/qr/:code.svg', async (req, res) => {
-    const url = `${req.protocol}://${req.get('host')}/j/${encodeURIComponent(req.params.code.toUpperCase())}`;
+    const url = `${req.protocol}://${req.get('host')}/p/${encodeURIComponent(req.params.code.toUpperCase())}`;
     res.type('image/svg+xml').send(await QRCode.toString(url, { type: 'svg', margin: 1 }));
   });
 
@@ -89,15 +97,17 @@ function createApp(opts = {}) {
     const L = {
       code, createdAt: now(), hostId: null, players: new Map(), state: 'lobby',
       settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, teammates: true, powerups: 'normal', chimeVol: 25,
-        features: Object.fromEntries(FEATURES.map(f => [f, true])) },
+        features: Object.fromEntries(FEATURES.map(f => [f, true])), mode: 'custom' },
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
       trails: {}, log: [], catches: new Map(), drops: new Map(), nextDropAt: 0, dropSide: 'hider', jamUntil: 0, truthNext: false, shrink: null, nextHoundAt: 0, recapCache: null, highlights: new Map(),
     };
+    applyMode(L.settings, DEFAULT_MODE);
     lobbies.set(code, L);
     return L;
   }
 
+  function applyMode(st, mode) { const M = MODES[mode]; if (!M) return; st.mode = mode; if (M.features) { st.features = { ...M.features }; st.powerups = M.powerups; } }
   function addPlayer(L, name, ig) {
     const p = { id: rid(6), token: rid(16), name: String(name || 'Player').trim().slice(0, 20) || 'Player',
       role: 'hider', caught: false, caughtAt: 0, ws: null, loc: null, perm: 'unknown', connected: false, revealedAt: 0,
@@ -139,8 +149,8 @@ function createApp(opts = {}) {
     v.catches = catchView(L, me);
     if (L.state === 'playing') { // hider drops ONLY to uncaught hiders; hunter drops to everyone
       const hiderView = me.role === 'hider' && !me.caught;
-      v.drops = [...L.drops.values()].filter(d => d.side === 'hunter' || hiderView).map(d => ({ id: d.id, side: d.side, lat: d.lat, lng: d.lng, expiresAt: d.expiresAt }));
-      v.pu = { held: me.held, cooldownUntil: me.lastUse ? me.lastUse + puCooldown(L) : 0, silent: me.silent, shieldUntil: me.shieldUntil, radarUntil: me.radarUntil, houndUntil: me.houndUntil,
+      v.drops = [...L.drops.values()].filter(d => d.side === 'hunter' || hiderView).map(d => ({ id: d.id, side: d.side, lat: d.lat, lng: d.lng, expiresAt: d.expiresAt, ptype: d.type }));
+      v.pu = { held: me.held, cooldownMs: puCooldown(L), cooldownUntil: me.lastUse ? me.lastUse + puCooldown(L) : 0, silent: me.silent, shieldUntil: me.shieldUntil, radarUntil: me.radarUntil, houndUntil: me.houndUntil,
         pickup: me.pickup ? { dropId: me.pickup.dropId, since: me.pickup.since, need: pickupMs(L) } : null };
       if (isHunter(me)) v.jamUntil = L.jamUntil;
     } v.hlCount = L.highlights.size; v.hlMine = L.highlights.has(me.id);
@@ -319,6 +329,9 @@ function createApp(opts = {}) {
           if (!L.compassAnnounced) { L.compassAnnounced = true; L.nextPingAt = 0; event(L, '🧭 SUDDEN DEATH — map pings stop, hunters get a compass!'); logEv(L, 'compass', {}, '🧭 Sudden-death compass phase'); broadcast(L); }
           if (t >= L.nextCompassAt) { L.nextCompassAt = t + Math.max(100, Math.min(2000, 2000 * scale(L) * 4)); sendCompass(L); }
         } else if (t >= L.nextPingAt) { doPing(L); broadcast(L); }
+        else if (L.nextPingAt && L.fixFor !== L.nextPingAt && L.nextPingAt - t <= Math.min(5000, L.settings.pingSec * 500)) { // ask every phone for a fresh GPS fix ~5 s before the ping (battery saver stays accurate)
+          L.fixFor = L.nextPingAt; for (const p of L.players.values()) send(p.ws, { type: 'need_fix', at: L.nextPingAt });
+        }
         if (F.bounty && !inCompass(L) && L.nextBountyAt && t >= L.nextBountyAt) {
           L.nextBountyAt = t + 300 * scale(L) * 1000; spawnBounty(L);
           for (const p of L.players.values()) tryClaim(L, p);
@@ -578,6 +591,8 @@ function createApp(opts = {}) {
           if (['off', 'normal', 'chaos'].includes(s.powerups)) L.settings.powerups = s.powerups;
           if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];
+          if (s.mode && MODES[s.mode] && s.mode !== 'custom') applyMode(L.settings, s.mode); // a preset wins over the individual toggles
+          else { const M = MODES[L.settings.mode]; if (s.mode === 'custom' || (M?.features && (L.settings.powerups !== M.powerups || FEATURES.some(f => L.settings.features[f] !== M.features[f])))) L.settings.mode = 'custom'; }
           broadcast(L);
         } break;
         case 'field': if (host && (L.state === 'lobby' || L.state === 'ended')) {

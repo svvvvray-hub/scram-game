@@ -14,7 +14,7 @@ const T0 = Date.now();
   const browser = await chromium.launch({ executablePath: process.env.CHROME || exe, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
   const errs = [];
   const mk = async (name, geo, ig) => {
-    const ctx = await browser.newContext({ ...devices['Pixel 7'], acceptDownloads: true, geolocation: { ...geo, accuracy: 6 }, permissions: ['geolocation', 'camera', 'microphone'] });
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], acceptDownloads: true, geolocation: { ...geo, accuracy: 6 }, permissions: ['geolocation', 'camera', 'microphone'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(); const frames = [], downloads = [];
     await page.addInitScript(() => { window.SCRAM_SEG_MS = 3000; });
     page.on('pageerror', e => { errs.push(name + ': ' + e.message); console.log(name, 'PAGEERR', e.message); });
@@ -64,7 +64,7 @@ const T0 = Date.now();
   check(wl.sup ? true : /wake lock/i.test(wl.warn), `wake lock: supported=${wl.sup} held=${wl.held}`);
   check(!murray.frames.some(f => f.includes('"trails"')) && !murray.frames.slice(-3).some(f => f.includes('alice_hides')), 'no trails / handles during play');
   // Carl (non-host hunter) claims Bob -> Bob confirms
-  await carl.page.waitForSelector('#hiderBtns [data-catch]');
+  await carl.page.click('#abCatch'); await carl.page.waitForSelector('#hiderBtns [data-catch]');
   await carl.page.click('#hiderBtns button:has-text("Bob")');
   await bob.page.waitForSelector('#catchBox [data-cy]', { timeout: 10000 }); check(/Carl says they caught you/.test(await bob.page.textContent('#catchBox')), 'Bob gets the catch confirmation prompt');
   await bob.page.click('#catchBox [data-cy]');
@@ -77,7 +77,7 @@ const T0 = Date.now();
   check(alice.downloads.some(n => n.includes('_part2')), 'segment files downloaded');
   for (const p of [alice, murray]) { await p.page.click('#recStop'); await p.page.waitForFunction(() => !Rec.recording); }
   await sleep(800);
-  await murray.page.click('#btnEnd');
+  await murray.page.click('#abMore'); await murray.page.click('#btnEnd');
   for (const p of [murray, alice, carl, bob]) await p.page.waitForSelector('#recap:not(.hidden)', { timeout: 15000 });
   const rc = await murray.page.evaluate(() => ({ n: Object.keys(RecapData.trails).length, aw: RecapData.awards.map(a => a.key), tr: RecapData.trophies.map(t => t.key + ':' + t.name), cc: RecapData.closeCalls.map(c => c.text), tl: document.querySelectorAll('#timeline li').length }));
   console.log(rc);

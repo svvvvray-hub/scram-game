@@ -7,7 +7,7 @@ const Recap = require('../public/recap');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const until = async (fn, ms = 4000) => { const t = Date.now(); while (!fn()) { if (Date.now() - t > ms) throw new Error('timeout'); await sleep(10); } };
-async function boot(o = {}) { const a = createApp({ tickMs: 20, minSec: 0.1, trailMs: 50, catchMs: 400, ...o }); await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`; return a; }
+async function boot(o = {}) { const a = createApp({ tickMs: 20, minSec: 0.1, trailMs: 50, catchMs: 400, defaultMode: 'custom', ...o }); await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`; return a; }
 function client(url) {
   const ws = new WebSocket(url), c = { ws, msgs: [], state: null, pings: [] };
   ws.on('message', d => { const m = JSON.parse(d); c.msgs.push(m); if (m.type === 'state') c.state = m; if (m.type === 'joined') c.joined = m; if (m.type === 'ping') c.pings.push(m); if (m.type === 'recap') c.recap = m.recap; });

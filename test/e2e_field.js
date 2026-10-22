@@ -17,7 +17,7 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   const inside = offsetM(base, 120, 200), outside = offsetM(base, 900, 45);
   const dialogs = [];
   const mk = async (name, p) => {
-    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { latitude: p.lat, longitude: p.lng, accuracy: 8 }, permissions: ['geolocation'] });
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { latitude: p.lat, longitude: p.lng, accuracy: 8 }, permissions: ['geolocation'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(); const frames = [];
     page.on('pageerror', e => { console.log(name, 'PAGEERR', e.message); fails++; });
     page.on('websocket', w => w.on('framereceived', f => { try { frames.push(JSON.parse(f.payload)); } catch {} }));
@@ -95,7 +95,7 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   await bob.ctx.setGeolocation({ latitude: inside.lat, longitude: inside.lng, accuracy: 8 });
   await bob.page.waitForSelector('#oob.hidden', { state: 'attached', timeout: 20000 });
   check(true, 'banner clears when Bob returns inside');
-  await host.page.click('#btnEnd');
+  await host.page.click('#abMore'); await host.page.click('#btnEnd');
   for (const p of [host, alice, bob]) { await p.page.waitForSelector('#end:not(.hidden)'); await p.page.click('#btnHome'); }
   await host.page.waitForSelector('#lobby:not(.hidden)');
   check(await host.page.evaluate(() => S.field && S.field.poly.length === 5), 'field persists across Play again');

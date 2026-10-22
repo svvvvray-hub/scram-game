@@ -20,12 +20,17 @@
 </section>
 
 <section id="lobby" class="screen hidden">
-  <div class="codebox"><div>Join code</div><div id="lobbyCode" class="code"></div>
-    <img id="qr" alt="QR code"><div><button id="btnShare" class="small">Share link</button> <span id="joinUrl" class="mono"></span></div></div>
+  <div class="codebox invite"><div class="note">Join code · tap to copy</div><button id="lobbyCode" class="code" title="Copy join code"></button>
+    <img id="qr" alt="QR code to join"><div class="note">Scan to join · <span id="joinUrl" class="mono"></span></div>
+    <button id="btnShare" class="big primary">📤 Share invite</button></div>
+  <div id="modeLine" class="modeLine"></div>
+  <div id="modeBox" class="modeBox hidden"><div class="note">🎮 Game mode</div>
+    <div class="seg modeSeg" id="modeSeg"><button class="small" data-mode="classic">Classic</button><button class="small" data-mode="party">Party</button><button class="small" data-mode="chaos">Chaos</button><button class="small" data-mode="custom">Custom</button></div>
+    <p id="modeDesc" class="note modeDesc"></p></div>
   <div id="gpsStatus" class="gps"></div>
   <button id="btnGps" class="big">Enable location</button>
   <button class="big rulesBtn" data-rules>📖 How to play</button>
-  <p id="hostName" class="note"></p><h3>Players <span id="roleCounts" class="note"></span></h3><ul id="playerList" class="players"></ul>
+  <p id="hostName" class="note"></p><h3><span id="roleCounts"></span></h3><ul id="playerList" class="players"></ul>
   <div id="fieldPanel">
     <h3>Playing field</h3>
     <div id="fieldSummary" class="note"></div>
@@ -51,17 +56,19 @@
     <p class="note">Tap a role pill to switch hunter/hider (at least 1 hunter), or randomize with the hunter count above.</p>
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
     <label class="chk"><input id="sMates" type="checkbox" checked> Teammates visible (hiders see fellow hiders live)</label>
+    <div id="customBox" class="hidden">
     <label>🎁 Power-up drops<select id="sPower"><option value="off">Off</option><option value="normal">Normal (every 3 min)</option><option value="chaos">Chaos (every 90 s)</option></select></label>
+    </div>
     <label>🔔 Chime volume <span id="chimeVolLbl">25%</span><input id="sChimeVol" type="range" min="10" max="100" step="5" value="25"></label>
     <div class="seg"><button id="btnChimeAll" class="small">🔔 Test chime on all phones</button> <span id="chimeTally" class="note"></span></div>
-    <h3>Power-ups</h3>
+    <div id="featBox" class="hidden"><h3>Extras</h3>
     <div id="features">
       <label class="chk"><input id="fDecoy" type="checkbox"> 👻 Ghost decoy (hiders: 2 fake pings)</label>
       <label class="chk"><input id="fChime" type="checkbox"> 🔔 Cold-ping chime (hider within 40 m of a hunter)</label>
       <label class="chk"><input id="fBounty" type="checkbox"> 💰 Bounty hot spot every 5 min</label>
       <label class="chk"><input id="fCam" type="checkbox"> 📷 Hider cam sneak peek at minute 10</label>
       <label class="chk"><input id="fCompass" type="checkbox"> 🧭 Sudden-death compass (last 2 min)</label>
-    </div>
+    </div></div>
     <button id="btnQuick" class="small">⚡ Quick test: 2-min game (all timings scale)</button>
     <button id="btnRandom" class="big">🎲 Randomize roles</button>
     <button id="btnStart" class="big primary">Start game</button>
@@ -79,13 +86,16 @@
   <div class="soundBox"><button id="btnSound" class="small">🔔 Check your sound</button>
     <div id="soundAsk" class="hidden">Did you hear it? <button id="soundYes" class="small primary">Yes</button> <button id="soundNo" class="small">No</button></div>
     <div id="soundTips" class="note hidden">🔇 Turn off silent / Do-Not-Disturb mode (iPhone: the side switch), raise the media volume, and unmute this tab. Websites can't override silent mode or your volume.</div></div>
+  <button id="btnResetTips" class="small">💡 Reset tips</button>
   <p id="waitHost" class="note hidden">Waiting for the host to start…</p>
   <button id="btnLeaveLobby" class="big danger">Leave lobby</button>
   <p class="note">⚠️ Keep this page open and the screen on during the game — phones (especially iPhones) pause GPS when the screen locks or the browser is in the background.</p>
 </section>
 
 <section id="game" class="screen hidden full">
-  <div id="hud"><div id="roleBadge"></div><div id="clock"></div><div id="pingClock"></div></div>
+  <div id="hud"><div id="roleBadge"></div><div id="clock"></div>
+    <div id="pingWrap"><svg class="pingRing" viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="21"/><circle id="pingArc" class="arc" cx="24" cy="24" r="21"/></svg><div id="pingClock"></div></div>
+    <span id="saverPill" class="saverPill hidden" title="Battery saver: you're still and no one's near, so GPS uploads slow to every 15 s">🔋 Saver</span></div>
   <div id="banner" class="hidden"></div>
   <div id="oob" class="hidden"></div>
   <div id="map"></div>
@@ -99,14 +109,18 @@
   <div id="bottom">
     <div id="warn" class="warn hidden"></div>
     <div id="catchBox" class="catchBox hidden"></div>
-    <div id="hunterPanel" class="hidden"><div id="chimeNote" class="chimeNote hidden"></div><div id="camStrip" class="camStrip"></div><div class="note"><b>🙌 I caught someone</b> — tap who (they confirm, or the host):</div><div id="hiderBtns"></div></div>
-    <div id="hiderPanel" class="hidden"><div id="revealed" class="note"></div><div id="hiderFx" class="note"></div>
-      <button id="btnDecoy" class="big decoy">👻 Ghost decoy <span id="decoyCount"></span></button>
-      <button id="btnCaughtSelf" class="big danger">I got caught</button></div>
-    <div id="puBox" class="puBox hidden"><button id="btnPower" class="big power"></button><div id="puNote" class="note"></div></div>
+    <div id="hunterPanel" class="hidden"><div id="chimeNote" class="chimeNote hidden"></div><div id="camStrip" class="camStrip"></div></div>
+    <div id="hiderPanel" class="hidden"><div id="revealed" class="note"></div><div id="hiderFx" class="note"></div></div>
+    <div id="puBox" class="puBox hidden"><div id="puNote" class="note"></div></div>
     <div id="houndBox" class="houndBox hidden"></div>
-    <button id="btnEnd" class="small hidden">End game (host)</button> <button id="btnLeaveGame" class="small">Leave</button>
-    <p class="note">Keep the screen on &amp; this tab open — browsers may pause GPS when the screen is off.</p>
+    <nav id="actionBar" aria-label="Game actions">
+      <button id="btnPower" class="ab abPower empty" disabled><span class="cdRing"></span><span class="ico"></span><small class="lbl">Power-up</small></button>
+      <button id="btnDecoy" class="ab abDecoy"><span class="ico"></span><span id="decoyBadge" class="badge"></span><small class="lbl">Decoy</small><span id="decoyCount" class="sr"></span></button>
+      <button id="abCatch" class="ab abCatch"><span class="ico"></span><small class="lbl">Catch</small></button>
+      <button id="btnCaughtSelf" class="ab abCaught"><span class="ico">🙋</span><small class="lbl">I got caught</small></button>
+      <div id="abRecSlot" class="abSlot"></div>
+      <button id="abMore" class="ab abMore" aria-label="More"><span class="ico">⋯</span><small class="lbl">More</small></button>
+    </nav>
   </div>
 </section>
 
@@ -145,7 +159,21 @@
 </section>
 </div>
 <div id="rulesSheet" class="hidden"><div class="sheetHead"><b>📖 How to play</b><button id="rulesClose" class="small">✕ Close</button></div><iframe id="rulesFrame" title="How to play"></iframe></div>
-<div id="toast" class="hidden"></div>
+<div id="catchSheet" class="sheet hidden"><div class="sheetHead"><b>🙌 I caught someone</b><button id="catchClose" class="small">✕</button></div>
+  <p class="note">Tap who you tagged. They confirm (or the host does) within 20 s.</p><div id="hiderBtns"></div></div>
+<div id="moreSheet" class="sheet hidden"><div class="sheetHead"><b>More</b><button id="moreClose" class="small">✕</button></div>
+  <button id="btnSoundGame" class="big">🔔 Sound check</button>
+  <button class="big rulesBtn" data-rules>📖 How to play</button>
+  <button id="btnRecQ" class="big">🎞 Clips &amp; recording quality</button>
+  <button id="btnResetTips2" class="big">💡 Reset tips</button>
+  <p id="saverNote" class="note">🔋 Battery saver: when you're still (moved &lt;5 m) and nobody's within 150 m, your phone uploads GPS every 15 s instead of every 3-5 s. Pings stay accurate: the server asks for a fresh fix 5 s before each one.</p>
+  <button id="btnEnd" class="big hidden">⏹ End game (host)</button>
+  <button id="btnLeaveGame" class="big danger">Leave game</button>
+  <p class="note">Keep the screen on &amp; this tab open — browsers may pause GPS when the screen is off.</p></div>
+<div id="roleCard" class="hidden"><div class="rcInner"><div id="rcTitle" class="rcTitle"></div><div id="rcGoal" class="rcGoal"></div>
+  <div id="rcCount" class="rcCount"></div><ul id="rcBullets" class="rcBullets"></ul><div class="note rcTap">Tap anywhere to continue</div></div></div>
+<div id="coach" class="coach" role="status" aria-live="polite"><span id="coachTxt"></span><button id="coachX" aria-label="Dismiss tip">✕</button></div>
+<div id="toast" class="toast"></div>
 <div id="chimeFlash" class="hidden"></div>
 <div id="recPreview" class="hidden"><video id="recVid" muted playsinline autoplay></video><video id="recPip" class="hidden" muted playsinline autoplay></video></div>
 <div id="bubbleHit" class="hidden" title="Tap to swap camera / map, drag to move"></div>
@@ -160,6 +188,8 @@
   <p class="note">Clips stay on this device only — never uploaded. Download or share them before leaving. Saved clips are dropped from memory after saving (kept until the highlight reel is built during a game).</p><ul id="clipList" class="players"></ul></div>
 <script src="vendor/leaflet.js"></script>
 <script src="field.js"></script>
+<script src="icons.js"></script>
+<script src="gps.js"></script>
 <script src="recap.js"></script>
 <script src="app.js"></script>
 <script src="record.js"></script>

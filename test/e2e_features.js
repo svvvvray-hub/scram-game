@@ -14,7 +14,7 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   const base = { latitude: 51.5079, longitude: -0.0877 };
   const nearA = offsetM({ lat: base.latitude, lng: base.longitude }, 30, 90); // Alice 30 m from hunter -> chimes
   const mk = async (name, geo) => {
-    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { ...geo, accuracy: 8 }, permissions: ['geolocation', 'camera'] });
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { ...geo, accuracy: 8 }, permissions: ['geolocation', 'camera'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(); const frames = [];
     page.on('pageerror', e => console.log(name, 'PAGEERR', e.message));
     page.on('websocket', w => w.on('framereceived', f => { try { frames.push(JSON.parse(f.payload)); } catch {} }));

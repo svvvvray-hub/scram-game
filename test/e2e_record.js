@@ -12,7 +12,7 @@ async function open(page, url) { await page.goto(url); await page.waitForSelecto
   const browser = await chromium.launch({ executablePath: process.env.CHROME || exe, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   const errs = [];
   const mk = async (name, geo) => {
-    const ctx = await browser.newContext({ ...devices['Pixel 7'], acceptDownloads: true, geolocation: { ...geo, accuracy: 8 }, permissions: ['geolocation', 'camera', 'microphone'] });
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], acceptDownloads: true, geolocation: { ...geo, accuracy: 8 }, permissions: ['geolocation', 'camera', 'microphone'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(); const frames = [], downloads = [];
     page.on('pageerror', e => { errs.push(name + ': ' + e.message); console.log(name, 'PAGEERR', e.message); });
     page.on('websocket', w => { w.on('framereceived', f => { try { frames.push(JSON.parse(f.payload)); } catch {} }); w.on('framesent', f => { if (String(f.payload).length > 100000) frames.push({ type: 'BIGSENT' }); }); });

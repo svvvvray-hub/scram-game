@@ -14,7 +14,7 @@ summary{cursor:pointer;font-weight:800;font-size:1.1em;padding:14px 0;list-style
 ul{padding-left:1.2em}li{margin:3px 0}
 </style></head><body>
 <header><a class="back" href="/" target="_top">← Back to Last Ping</a><h1>📖 How to play</h1><p class="sub">GPS hide &amp; seek in your phone's browser. Tap a section to open it.</p></header>
-<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
+<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
 <main>
 <details id="goal" open><summary>🎯 Goal &amp; roles</summary>
 <p><b>Hiders 🙈</b> try to stay uncaught until the clock runs out. <b>Hunters 🔦</b> try to catch every hider first. The host picks roles (any number of hunters, at least one) or taps 🎲 Randomize.</p>
@@ -24,6 +24,17 @@ ul{padding-left:1.2em}li{margin:3px 0}
 <p><b>Who sees whom (live):</b> hunters see every other hunter live on the map. With the host setting <i>Teammates visible</i> (on by default), hiders who haven't been caught see the other uncaught hiders live (🤝 purple marker with their name, every GPS update, about every 2–5 s). Hunters <b>never</b> see hiders live; they only get the ping snapshots. Caught and infected? You lose the hider view instantly, start seeing hunters, and the hiders stop seeing you. Caught without infection? You become a spectator and see nothing live until the recap.</p>
 <p><b>Lobby size:</b> up to <span class="v" data-v="maxPlayers">20</span> players per lobby.</p></details>
 
+<details id="modes"><summary>🎮 Game modes</summary>
+<p>The host picks a mode in the lobby. New lobbies start in <b><span id="defMode">Classic</span></b>. Pings, the playing field, the chime (where noted) and catch confirmation work in every mode.</p>
+<ul id="modeList"><li><b>Classic</b>: pings, field, chime, catch confirmation. No decoys, bounties, power-ups, cam peek or compass.</li><li><b>Party</b>: Classic + decoys, bounties, power-ups (Normal) and the compass.</li><li><b>Chaos</b>: everything on, power-ups every 90 s.</li><li><b>Custom</b>: shows every individual toggle.</li></ul>
+<p class="tip">Sections below about decoys, bounties, power-ups, cam peek and the compass only apply when that mode (or Custom) has them on.</p></details>
+<details id="play"><summary>📱 Playing on your phone</summary><ul>
+<li><b>Invites:</b> the lobby shows a big join code (tap to copy), a QR code and a <i>Share invite</i> button. Scanning the QR opens the join screen with the code filled in.</li>
+<li><b>Role card:</b> at the start you get a full-screen card with your role, your goal and the head-start countdown. Tap to close it (hunters' card closes itself at release). You get one when you're infected too.</li>
+<li><b>Action bar:</b> everything is in the bar at the bottom: power-up slot (with a cooldown ring, greyed out in sudden death), decoy (badge = charges left), Catch / I got caught, Record, and ⋯ More (sound check, these rules, leave).</li>
+<li><b>Pings:</b> a ripple shows on the map where each hider was seen, hunters' phones buzz briefly, and the ring around the ping timer counts down.</li>
+<li><b>Tips:</b> short one-time tips pop up the first time something happens. <i>Reset tips</i> (lobby, or ⋯ More) shows them again.</li>
+<li><b>Battery saver:</b> when you've moved less than <span class="v" data-v="gpsStillM">5</span> m and nobody you know of (or any drop / bounty) is within <span class="v" data-v="gpsEnemyM">150</span> m, your phone sends GPS every <span class="v" data-v="gpsSlowSec">15</span> s instead of every 3-5 s (🔋 Saver in the top bar). <span class="v" data-v="needFixLeadSec">5</span> s before every ping the server asks every phone for a fresh fix, so pings and chimes stay exact. The map stops drawing while the page is in the background.</li></ul></details>
 <details id="timing"><summary>⏱ Timing</summary><ul>
 <li>A standard game is <span class="v" data-v="gameMin">20</span> minutes (host can change it; all the timings below scale with game length).</li>
 <li><b>Head start:</b> <span class="v" data-v="hideSec">120</span> s for hiders to run; hunters' maps are covered.</li>
@@ -94,7 +105,7 @@ fetch('/api/rules').then(r => r.json()).then(c => {
   for (const el of document.querySelectorAll('[data-v]')) if (c[el.dataset.v] != null) el.textContent = c[el.dataset.v];
   const w = c.hiderWeights, tot = Object.values(w).reduce((a, b) => a + b, 0), pct = k => Math.round(w[k] / tot * 100) + '%';
   document.getElementById('oddsNote').textContent = 'Hider odds: ' + Object.keys(w).map(k => `${c.info[k][0]} ${c.info[k][1]} ${pct(k)}`).join(' · ') + '. Hunter power-ups are equally likely.';
-  if (window.Recap) {}
+  if (c.modes) { document.getElementById('defMode').textContent = c.modes[c.defaultMode].label; document.getElementById('modeList').innerHTML = Object.values(c.modes).map(m => `<li><b>${m.label}</b>: ${m.desc}</li>`).join(''); }
 }).catch(() => {});
 if (window.top !== window) for (const a of document.querySelectorAll('a.back')) a.addEventListener('click', e => { e.preventDefault(); parent.postMessage('scram:closeRules', location.origin); });
 if (location.hash) { const d = document.querySelector(location.hash); if (d && d.tagName === 'DETAILS') d.open = true; }

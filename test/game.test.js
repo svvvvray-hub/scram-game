@@ -6,7 +6,7 @@ const { createApp } = require('../server');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function boot() {
-  const a = createApp({ tickMs: 20, minSec: 0.1 });
+  const a = createApp({ tickMs: 20, minSec: 0.1, defaultMode: 'custom' });
   await new Promise(r => a.server.listen(0, r));
   a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
   return a;
@@ -110,7 +110,7 @@ test('reconnect with token restores same player & role; non-host cannot start', 
 
 test('ended lobby kept while players remain; deleted after 1 h idle (memory only)', async () => {
   let fake = Date.now();
-  const a = createApp({ tickMs: 20, minSec: 0.1, now: () => fake });
+  const a = createApp({ tickMs: 20, minSec: 0.1, now: () => fake, defaultMode: 'custom' });
   await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
   const { host, hs } = await setup(a, { gameSec: 30, pingSec: 5, hideSec: 0 });
   host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
@@ -193,7 +193,7 @@ const only = (...on) => Object.fromEntries(['decoy', 'chime', 'bounty', 'cam', '
 const lobbyOf = (a, code) => a.lobbies.get(code);
 const HIDER0 = { lat: HIDER_LAT[0], lng: -122.1 };
 
-test('lobby feature toggles: all on by default, host-only, persisted across rematch', async () => {
+test('lobby feature toggles (Custom mode test default): all on, host-only, persisted across rematch', async () => {
   const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 5, hideSec: 0 });
   assert.deepEqual(host.state.settings.features, only('decoy', 'chime', 'bounty', 'cam', 'compass'));
   hs[0].send({ type: 'settings', settings: { features: { decoy: false } } }); await sleep(60);
@@ -446,7 +446,7 @@ test('bounties always spawn inside the field (circle, polygon, intersection, pla
 });
 
 test('out of bounds: warning state for the player, hider auto-revealed (true spot, decoy ignored) on next ping after grace', async () => {
-  const a = createApp({ tickMs: 20, minSec: 0.1, oobMinMs: 300 });
+  const a = createApp({ tickMs: 20, minSec: 0.1, oobMinMs: 300, defaultMode: 'custom' });
   await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
   const { host, hs } = await setup(a, { gameSec: 4, pingSec: 0.8, hideSec: 0, teammates: false });
   const IN = off(C0, 100, 0), OUT = off(C0, 700, 0);
@@ -537,4 +537,35 @@ test('player cap: MAX_PLAYERS per lobby, "Lobby is full (n/n)" on join, exposed 
   const e = createApp({ env: { MAX_PLAYERS: '7' } }); await new Promise(r2 => e.server.listen(0, r2));
   const r2 = await new Promise(res => require('http').get(`http://127.0.0.1:${e.server.address().port}/api/rules`, q => { let b = ''; q.on('data', dd => b += dd); q.on('end', () => res(JSON.parse(b))); }));
   assert.equal(r2.maxPlayers, 7); e.server.close();
+});
+
+test('game modes: new lobby defaults to Classic; presets apply; a manual toggle switches to Custom; listed in /api/rules', async () => {
+  const a = createApp({ tickMs: 20, minSec: 0.1 }); await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  const host = client(a.url, 'H'); await host.open; host.send({ type: 'create', agreed: true, name: 'H' }); await until(() => host.state);
+  let st = host.state.settings; assert.equal(st.mode, 'classic'); assert.equal(st.powerups, 'off');
+  assert.deepEqual(st.features, { decoy: false, chime: true, bounty: false, cam: false, compass: false });
+  host.send({ type: 'settings', settings: { mode: 'party' } }); await until(() => host.state.settings.mode === 'party');
+  st = host.state.settings; assert.equal(st.powerups, 'normal'); assert.deepEqual(st.features, { decoy: true, chime: true, bounty: true, cam: false, compass: true });
+  host.send({ type: 'settings', settings: { mode: 'chaos' } }); await until(() => host.state.settings.mode === 'chaos');
+  st = host.state.settings; assert.equal(st.powerups, 'chaos'); assert.ok(Object.values(st.features).every(Boolean));
+  host.send({ type: 'settings', settings: { features: { cam: false } } }); await until(() => host.state.settings.mode === 'custom');
+  assert.equal(host.state.settings.features.cam, false); assert.equal(host.state.settings.powerups, 'chaos', 'custom keeps the current toggles');
+  host.send({ type: 'settings', settings: { mode: 'classic', features: { decoy: true } } }); await until(() => host.state.settings.mode === 'classic');
+  assert.equal(host.state.settings.features.decoy, false, 'preset wins over toggles in the same message');
+  const r = await new Promise(res => require('http').get(`http://127.0.0.1:${a.server.address().port}/api/rules`, q => { let b = ''; q.on('data', d => b += d); q.on('end', () => res(JSON.parse(b))); }));
+  assert.equal(r.defaultMode, 'classic'); assert.deepEqual(Object.keys(r.modes), ['classic', 'party', 'chaos', 'custom']); assert.ok(r.modes.party.desc.length > 10);
+  a.server.close(); host.ws.terminate();
+});
+
+test('battery saver: server sends need_fix to every phone ~5 s (scaled) before each scheduled ping', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 0.6, hideSec: 0 });
+  host.send({ type: 'start' }); await until(() => host.pings.length >= 2, 4000);
+  for (const c of [host, ...hs]) {
+    const nf = c.msgs.filter(m => m.type === 'need_fix');
+    assert.ok(nf.length >= 2, 'need_fix before each ping');
+    const ping1 = c.msgs.findIndex(m => m.type === 'ping'), nf1 = c.msgs.findIndex(m => m.type === 'need_fix');
+    assert.ok(nf1 >= 0 && nf1 < ping1, 'need_fix arrives before the ping');
+    assert.equal(nf[0].at, c.pings[0].t > 0 ? nf[0].at : 0);
+  }
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
 });

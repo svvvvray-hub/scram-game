@@ -284,3 +284,42 @@ that forces drop types): `PORT=3001 SCRAM_TEST_PU=hider:radar,hunter:sonar node 
 - **Teammates visible** (host toggle, on by default): uncaught hiders see the other uncaught hiders live (🤝 purple marker with name) on every GPS update. The server builds a separate view for each player, and those positions go only to uncaught hiders, **never to hunters**. Hunters still see each other live, as before. When a hider is caught and infected, they immediately stop getting hider positions, start getting hunter positions, and drop off the other hiders' maps. A player caught without infection becomes a spectator and sees nothing live until the recap. Unit tests grep every frame hunters receive for leaked hider coordinates.
 - **Player cap:** `MAX_PLAYERS` (env, default 20, range 2–500) per lobby. Joining a full lobby gets `Lobby is full (20/20)`. The lobby shows `Players 7/20`, and the cap is in `/api/rules` and on the rules page.
 - **Capacity:** the Render free tier comfortably handles a few concurrent lobbies of 20. Each GPS update triggers small per-player JSON frames, so the work per lobby grows with the square of its size, but at 20 players and one update every 2–5 s per player that's only a few hundred small messages a second. One caveat: the free instance sleeps when idle, so the first visit can take about 30 s.
+
+## v9: simpler UX and modern UI
+- **Game modes:** the host picks Classic (the default for new lobbies), Party, Chaos or Custom, and each has a one-line description.
+  - Classic = pings, field, chime and catch confirmation.
+  - Party = Classic + decoys, bounties, power-ups (Normal) and the compass.
+  - Chaos = everything on, with power-ups on Chaos.
+  - Custom reveals the individual toggles.
+  - Changing any toggle switches the lobby to Custom.
+  - The modes come from the same server constants as `/api/rules` (`modes` and `defaultMode`), and the rules page renders them from there.
+- **Coach tips:** one-time and dismissible, stored per device (`localStorage.scramTips`), shown one at a time, and hidden after 6 s. They cover:
+  - first ping (hunter and hider versions)
+  - decoy ready, bounty, power-up pickup and power-up held
+  - chime (hider and hunter versions)
+  - out of bounds, compass, caught, infected and recording
+  - "Reset tips" is in the lobby and in ⋯ More.
+- **Role card:** a full-screen "You're a HIDER / HUNTER" card in the role color, with the goal, the head-start countdown ("Hide! 2:00" / "Wait... hunters release in 2:00") and 3 bullets summarising the mode. Tap to close it; the hunter's card closes itself at release. Infected players get "You've been infected, you're a HUNTER now".
+- **Bottom action bar:** power-up slot (icon, cooldown ring, greyed out in sudden death), decoy (charges badge), Catch (opens a catch sheet) or I got caught, Record, and ⋯ More (sound check, rules, clips and quality, reset tips, end game for the host, leave). Buttons are at least 56 px, the bar respects safe-area insets, and the radar bubble sits above the bar.
+- **Pings:** a ripple appears on the map at each pinged spot, hunters' phones buzz (`navigator.vibrate(40)`), and an SVG ring around the ping timer counts down (red in the last 5 s).
+- **Map:** markers are clean SVG badges (`public/icons.js`): hunters red, hiders cyan, teammates purple, drops and bounties gold with a per-type power-up glyph, the recap decoy as a ghost, and "you" in green with a pulse. The boundary stays bold yellow.
+  - **Basemap:** CARTO's dark raster tiles now return an "API KEY REQUIRED" placeholder without a key. So the default is OSM tiles with a CSS dark filter, attribution kept.
+  - **Your own dark tiles:** set `DARK_TILES_URL` (and `DARK_TILES_ATTR`), e.g. CARTO `dark_nolabels` with your key. If those tiles fail to load, the map falls back to the filtered OSM tiles.
+- **Motion:**
+  - Markers glide to new positions over 600 ms.
+  - Sheets slide up with a spring easing.
+  - Toasts and tips animate in and out.
+  - `prefers-reduced-motion` turns all of this off, including the gliding.
+- **Invites:** a big join code (tap to copy), a QR code of `/p/<code>` rendered server-side with the bundled `qrcode` package (no CDN), and a Share invite button (`navigator.share`, or a copied link as fallback). Opening the QR link prefills the join screen. If `PLAY_REDIRECT_URL` is set, `/p/<code>` follows it, as before.
+- **Battery saver** (`public/gps.js`, unit-tested in `test/gps.test.js`):
+  - **How GPS is read:** `watchPosition` with `maximumAge: 3000`.
+  - **Saver mode:** if you've moved less than 5 m and no known enemy, drop or bounty is within 150 m, uploads happen at most every 15 s. Otherwise they happen every 3-5 s, and urgently in the compass phase or during a pickup.
+  - **What counts as an enemy:** only positions your phone already has (pings for hunters, Radar for hiders). The server never hints at proximity.
+  - **Accurate pings:** 5 s before every scheduled ping (scaled for short games), the server sends `need_fix`. Every phone then uploads straight away and asks for a fresh high-accuracy fix. Catch claims also force an upload.
+  - **Background:** map rendering pauses while the page is hidden.
+  - **Indicator:** 🔋 Saver shows in the HUD.
+- **Tests:**
+  - **Unit:** `npm test` covers modes, `need_fix` and the throttle.
+  - **New e2e:** `node test/e2e_v9.js` against a server with real defaults (`PORT=3002 node server.js`).
+  - **Older e2e suites:** run against `SCRAM_DEFAULT_MODE=custom node server.js` (the old everything-on defaults) and set `localStorage.scramQuiet=1` to skip the role card and tips. Those two are test-only hooks.
+- **Screenshots:** `shots/v9_*.png`.

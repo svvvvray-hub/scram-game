@@ -13,7 +13,7 @@ const T0 = Date.now();
   const browser = await chromium.launch({ executablePath: process.env.CHROME || exe, args: ['--autoplay-policy=no-user-gesture-required'] });
   const errs = [];
   const mk = async (name, geo) => {
-    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { ...geo, accuracy: 5 }, permissions: ['geolocation'] });
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { ...geo, accuracy: 5 }, permissions: ['geolocation'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(), frames = [];
     page.on('pageerror', e => { errs.push(name + ': ' + e.message); console.log(name, 'PAGEERR', e.message); });
     page.on('websocket', w => w.on('framereceived', f => { try { frames.push(JSON.parse(f.payload)); } catch {} }));
@@ -96,7 +96,7 @@ const T0 = Date.now();
   const bobId = await bob.page.evaluate(() => S.you);
   check(sp && sp.locs[bobId] && Math.abs(sp.locs[bobId].lat - sd.lat) < 0.0002, 'steal pings Bob\'s real location to the hunter');
   check(bob.frames.some(f => f.type === 'dropFlash') && ana.frames.some(f => f.type === 'dropFlash'), 'everyone sees the drop spot flash');
-  await murray.page.click('#btnEnd'); await murray.page.waitForSelector('#recap:not(.hidden)', { timeout: 15000 });
+  await murray.page.click('#abMore'); await murray.page.click('#btnEnd'); await murray.page.waitForSelector('#recap:not(.hidden)', { timeout: 15000 });
   const tl = await murray.page.textContent('#timeline');
   check(/used Hunter Radar/.test(tl) && /used Sonar/.test(tl) && /destroyed a hunter drop/.test(tl), 'power-up events in the recap timeline');
   const tr = await murray.page.evaluate(() => RecapData.trophies.map(t => t.key + ':' + t.name));

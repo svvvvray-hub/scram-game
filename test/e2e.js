@@ -6,7 +6,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROME || ['/usr/bin/google-chrome', '/opt/google/chrome/chrome'].find(p => require('fs').existsSync(p)), args: process.env.NOH2 ? ['--disable-http2'] : [] });
   const mk = async (name, geo) => {
-    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { ...geo, accuracy: 12 }, permissions: ['geolocation'] });
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { ...geo, accuracy: 12 }, permissions: ['geolocation'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(); page.on('console', m => process.env.DBG && console.log(name, 'CONSOLE', m.text())); page.on('pageerror', e => console.log(name, 'ERR', e.message)); page.on('framenavigated', f => f === page.mainFrame() && process.env.DBG && console.log(name, 'NAV', f.url())); page.on('websocket', w => { process.env.DBG && console.log(name, 'WS open'); w.on('close', () => process.env.DBG && console.log(name, 'WS close')); w.on('socketerror', e => console.log(name, 'WSERR', e)); w.on('framesent', f => process.env.DBG && console.log(name, 'SENT', String(f.payload).slice(0, 60))); }); page.on('websocket', w => w.on('framereceived', f => process.env.DBG && console.log(name, 'F', String(f.payload).slice(0, 50))));
     return { name, ctx, page };
   };
@@ -46,7 +46,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   console.log('ping gaps ms', pingTimes.slice(1).map((t, i) => t - pingTimes[i]));
   console.log('moved location leaked before ping?', leakedEarly, '| after ping present?', frames.some(f => f.d.includes('51.512')));
   // catch Alice, Bob self-reports -> hunters win
-  await hunter.page.click(`#hiderBtns button:has-text("Alice")`);
+  await hunter.page.click('#abCatch'); await hunter.page.click(`#hiderBtns button:has-text("Alice")`);
   await sleep(1000);
   await h2.page.click('#btnCaughtSelf');
   await hunter.page.waitForSelector('#catchBox [data-cy]', { timeout: 10000 }); console.log('hunter got catch confirm prompt');
@@ -76,7 +76,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (round === 2) {
       await hunter.page.waitForFunction(() => S && S.pingCount >= 1, null, { timeout: 20000 });
       console.log('round 2 hunter sees', await hunter.page.locator('.leaflet-tooltip').count(), 'map labels after first ping');
-      for (const n of ['Alice', 'Bob']) { await hunter.page.click(`#hiderBtns button:has-text("${n}")`); await sleep(700); }
+      for (const n of ['Alice', 'Bob']) { await hunter.page.click('#abCatch'); await hunter.page.click(`#hiderBtns button:has-text("${n}")`); await sleep(700); }
     }
     await hunter.page.waitForSelector('#end:not(.hidden)', { timeout: 40000 });
     const w = await hunter.page.textContent('#winner');

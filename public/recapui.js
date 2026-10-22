@@ -50,14 +50,14 @@
     for (const e of R.log) {
       if (e.t > t) break;
       if (e.k === 'ping') for (const [id, l] of Object.entries(e.locs || {})) { if (!l) continue; const dec = (e.decoys || []).includes(id);
-        if (dec) mk([l.lat, l.lng], '👻', `${esc(pname(id))}: DECOY (fake point) · ${clk(e.t - R.startedAt)}`);
+        if (dec) mk([l.lat, l.lng], window.Icons ? Icons.badge('decoy', Icons.COL.decoy, { size: 26 }) : '👻', `${esc(pname(id))}: DECOY (fake point) · ${clk(e.t - R.startedAt)}`);
         else L.circleMarker([l.lat, l.lng], { radius: 4, color: col[id], weight: 2, fillOpacity: .3 }).bindTooltip(`📡 ${esc(pname(id))} seen · ${clk(e.t - R.startedAt)}`).addTo(layer); }
-      else if (e.k === 'bounty') mk([e.lat, e.lng], '💰', `💰 ${esc(pname(e.id))} · ${clk(e.t - R.startedAt)}`);
+      else if (e.k === 'bounty') mk([e.lat, e.lng], window.Icons ? Icons.badge('bounty', Icons.COL.drop, { size: 26 }) : '💰', `💰 ${esc(pname(e.id))} · ${clk(e.t - R.startedAt)}`);
       else if (e.k === 'catch') { const p = Recap.posAt(R.trails[e.id], e.t); if (p) mk([p.lat, p.lng], '🎯', esc(e.text)); }
       else if (e.k === 'close') mk([e.lat, e.lng], '😱', `${esc(e.text)}`).getElement?.()?.classList.add('closeMk');
       else if (e.k === 'chime') for (const id of e.ids || []) { const p = Recap.posAt(R.trails[id], e.t); if (p) mk([p.lat, p.lng], '🔔', `🔔 ${esc(pname(id))} chimed`); }
       else if (e.k === 'steal') mk([e.lat, e.lng], '🦝', esc(e.text));
-      else if (e.k === 'pickup') mk([e.lat, e.lng], '🎁', esc(e.text));
+      else if (e.k === 'pickup') mk([e.lat, e.lng], window.Icons ? Icons.badge(Icons.has(e.ptype) ? e.ptype : 'gift', Icons.COL.drop, { size: 26 }) : '🎁', esc(e.text));
       else if (e.k === 'power') { const p = Recap.posAt(R.trails[e.id], e.t); if (p) mk([p.lat, p.lng], '⚡', esc(e.text)); }
       else if (e.k === 'oob' && e.on) { const p = Recap.posAt(R.trails[e.id], e.t); if (p) mk([p.lat, p.lng], '🚧', esc(e.text)); }
     }
