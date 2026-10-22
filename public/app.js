@@ -111,8 +111,9 @@ async function takePhoto() {
   if (camConsent !== 'granted' || document.visibilityState !== 'visible' || !navigator.mediaDevices) return sendMsg({ type: 'camPhoto', unavailable: true });
   let st;
   try {
-    st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 } }, audio: false });
-    const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = st; await v.play();
+    const live = window.Rec?.backStream?.(); // recording holds the back camera: reuse its stream, don't stop it
+    st = live ? null : await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 } }, audio: false });
+    const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = live ? new MediaStream(live.getVideoTracks()) : st; await v.play();
     await new Promise(r => setTimeout(r, 400)); // let exposure settle
     const k = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
     c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);

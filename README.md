@@ -89,7 +89,18 @@ everything outside.
 - **Bounties** spawn 50–250 m from the players' centroid, re-rolled until inside the field; if that fails
   (e.g. everyone is outside), a random point inside the field is used.
 
+## Recording (v5) — client-only clips, never uploaded
+- Floating **⏺ Record** button (top-right in the lobby, right edge mid-map in game). Records the back camera (`facingMode: environment`) + mic with `MediaRecorder`; mimeType picked from `video/mp4`, `video/webm;codecs=vp9`, `vp8`.
+- While recording the screen splits: live preview on top (REC dot, timer, 🔄 Flip, ⏹ Stop over it), map + HUD/decoy/caught buttons below (map `invalidateSize()` on every layout change). Stop returns the map to full screen.
+- **Flip** stops and saves the current clip and starts a new one with the other camera. Each clip is a file `scram_<code>_<role>_<back|front>_<HHMMSS>.<webm|mp4>`.
+- **Dual attempt**: on start it also opens the other camera; if both tracks stay `live` and deliver frames within ~1.5 s, two recorders run (back big, front picture-in-picture) and two files are saved. Otherwise it falls back to one camera with the toast “This phone allows one camera at a time; use Flip”.
+- Clips are auto-downloaded when finished and listed in **🎞 My clips** (Download blob link + Share via `navigator.share` files where supported). Nothing goes to the server. Leaving the page warns if recording or a clip wasn't saved.
+- GPS and the WebSocket keep running. The minute-10 cam peek reuses the recording's back-camera stream instead of opening the camera again.
+- Denied camera → friendly toast; denied mic → video-only.
+- **Limitations**: most phones (all iPhones, most Android) allow only one camera at a time, so dual mode usually falls back. iOS Safari records MP4 and may not auto-download (use Share / Download → Save to Files). Clips live in memory until saved; closing the tab or the phone killing the background tab loses them. Long clips use lots of RAM. Recording stops if the browser backgrounds the page.
+
 ### Tests
+- `node test/e2e_record.js` — fake camera/mic: denied permission, record → flip → stop (2 clips, names, size>0, auto-download, nothing uploaded), split layout, cam peek while recording, dual attempt.
 ```
 npm test                                  # 25 unit tests (node:test, fake WebSocket clients + fake GPS)
 node test/e2e.js http://localhost:3000    # original 3-player browser e2e (rounds, rematch, leave, privacy)

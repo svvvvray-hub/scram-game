@@ -44,3 +44,17 @@ button:disabled{opacity:.5}
 #oob{background:#dc2626;padding:10px 12px;text-align:center;font-weight:800;animation:pulse 1s infinite}
 .drawing #fieldMap{outline:3px solid #facc15}.vtx{background:#facc15;border:2px solid #000;border-radius:50%}
 .pill.out{background:#dc2626}
+
+#recDock{position:fixed;right:8px;top:8px;z-index:1500;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.recBtn{background:#111827dd;border:2px solid #ef4444;padding:10px 12px;font-weight:700;font-size:.9em}
+.recBar{display:flex;flex-direction:column;align-items:center;gap:6px;background:#000c;padding:8px;border-radius:12px;font-size:.85em}
+.recBar b{color:#ef4444}.recDot{width:12px;height:12px;border-radius:50%;background:#ef4444;animation:blink 1s infinite}@keyframes blink{50%{opacity:.2}}
+#clipSheet{position:fixed;left:0;right:0;bottom:0;max-height:60dvh;overflow:auto;background:#1f2937;border-radius:16px 16px 0 0;padding:12px 14px;z-index:1900;box-shadow:0 -4px 20px #0008}
+.sheetHead{display:flex;justify-content:space-between;align-items:center}#clipList li{flex-wrap:wrap;font-size:.85em}.dl{color:#fff;background:#16a34a;border-radius:10px;text-decoration:none}
+#recPreview{position:fixed;left:0;right:0;top:0;height:50dvh;background:#000;z-index:1400;overflow:hidden}
+#recVid{width:100%;height:100%;object-fit:cover;display:block}#recPip{position:absolute;right:10px;bottom:10px;width:28%;aspect-ratio:3/4;object-fit:cover;border:2px solid #fff;border-radius:10px}
+#recPreview .recBar{position:absolute;left:10px;right:10px;top:max(10px,env(safe-area-inset-top));flex-direction:row;justify-content:space-between}
+body.recording #app{position:fixed;left:0;right:0;top:50dvh;height:50dvh;overflow:auto}body.recording .full{height:50dvh}
+body.recording #map{min-height:80px}body.recording #bottom{max-height:24dvh}body.recording #hideCover{inset:auto 0 0 0;height:30dvh;top:auto}
+body.recording #recDock{top:calc(50dvh + 60px)}
+body.inGame #recDock{top:38%}
