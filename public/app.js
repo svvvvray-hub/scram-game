@@ -708,10 +708,9 @@ $('btnRejoin').onclick = () => { if (!sess) return; unlockAudio?.(); sendMsg({ t
 (function inAppBanner() {
   const r = window.InApp && InApp.detect(navigator.userAgent); if (!r || !r.inApp) return;
   document.body.dataset.inapp = r.app; const box = $('inapp'); box.classList.remove('hidden');
-  $('inappApp').textContent = r.app === 'WebView' ? 'an app' : r.app;
   const link = () => { const u = new URL(location.href); const c = $('code').value.trim().toUpperCase(); if (c && !u.searchParams.get('code')) u.searchParams.set('code', c); return u.href; };
-  if (r.os === 'android') { const a = $('btnChrome'); a.classList.remove('hidden'); a.href = InApp.chromeIntent(link()); a.onclick = () => { a.href = InApp.chromeIntent(link()); }; }
-  else if (r.os === 'ios') { $('inappIos').classList.remove('hidden'); $('inappArrow').classList.remove('hidden'); }
+  if (r.os === 'android') { $('inappMsg').textContent = "Open in Chrome so the game doesn't close when you switch apps."; const a = $('btnChrome'); a.classList.remove('hidden'); a.href = InApp.chromeIntent(link()); a.onclick = () => { a.href = InApp.chromeIntent(link()); }; }
+  else if (r.os === 'ios') { $('inappMsg').classList.add('hidden'); $('inappIos').classList.remove('hidden'); $('inappArrow').classList.remove('hidden'); }
   $('btnCopyLink').onclick = async () => { const u = link(); try { await navigator.clipboard.writeText(u); toast('Link copied — paste it into ' + (r.os === 'ios' ? 'Safari' : 'Chrome')); } catch { prompt('Copy this link:', u); } };
   $('inappClose').onclick = () => box.classList.toggle('mini'); // minimizes, but stays on the join screen
 })();

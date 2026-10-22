@@ -32,12 +32,14 @@ const ZALO_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWe
   check(href.startsWith(`intent://${host_}/?`) && href.includes(`code=${code}`) && href.includes('ref=murray') && href.includes('#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=') && href.endsWith(';end'), 'intent URL keeps code + ref: ' + href);
   check(decodeURIComponent(href.split('S.browser_fallback_url=')[1].replace(/;end$/, '')).includes(`code=${code}`), 'fallback URL decodes to the invite link');
   check(!(await za.page.isVisible('#inappIos')), 'Android does not show the iOS instructions');
+  const zaTxt = await za.page.innerText('#inapp'); check(!/Zalo|Facebook|Messenger|Instagram|TikTok|WeChat|Line|Snapchat|WebView/.test(zaTxt) && /not in your main browser/.test(zaTxt) && /Open in Chrome so the game doesn't close when you switch apps\./.test(zaTxt), 'Android banner copy is generic: ' + JSON.stringify(zaTxt));
   await za.page.screenshot({ path: 'shots/v10_android_inapp.png' });
   // ---- Zalo iOS
   const zi = await mk('ZaloI', { latitude: 51.511, longitude: -0.085 }, { ...devices['iPhone 13'], userAgent: ZALO_IOS });
   await zi.page.goto(`${URL}/p/${code}`); await zi.page.waitForSelector('body[data-ready]');
   check(await zi.page.isVisible('#inappIos') && await zi.page.isVisible('#inappArrow') && /Open in Safari/.test(await zi.page.textContent('#inappIos')), 'Zalo iOS: Safari banner + arrow');
   check(!(await zi.page.isVisible('#btnChrome')), 'iOS: no Chrome intent button');
+  const ziTxt = await zi.page.innerText('#inapp'); check(!/Zalo|Facebook|Messenger|Instagram|TikTok|WeChat|Line|Snapchat|WebView/.test(ziTxt) && /not in your main browser/.test(ziTxt) && /Tap ⋯ and choose Open in Safari so the game keeps running\./.test(ziTxt), 'iOS banner copy is generic: ' + JSON.stringify(ziTxt));
   await zi.page.screenshot({ path: 'shots/v10_ios_inapp.png' });
   await zi.page.click('#btnCopyLink'); const clip = await zi.page.evaluate(() => navigator.clipboard.readText());
   check(clip.includes(`code=${code}`), 'Copy link copies the invite URL: ' + clip);
