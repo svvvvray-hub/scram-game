@@ -36,7 +36,7 @@ function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   const sock = ws, guard = setTimeout(() => { if (sock.readyState === 0) sock.close(); }, 6000); // stuck handshake (some tunnels) -> retry
   ws.onopen = () => {
-    clearTimeout(guard); retry = 0; $('btnCreate').disabled = $('btnJoin').disabled = false; $('btnCreate').textContent = 'Create game'; if ($('btnJoin').dataset.code) $('btnJoin').textContent = 'Join game ' + $('btnJoin').dataset.code; document.body.dataset.ready = '1';
+    clearTimeout(guard); timeSync(); retry = 0; $('btnCreate').disabled = $('btnJoin').disabled = false; $('btnCreate').textContent = 'Create game'; if ($('btnJoin').dataset.code) $('btnJoin').textContent = 'Join game ' + $('btnJoin').dataset.code; document.body.dataset.ready = '1';
     if (pendingAction) { ws.send(JSON.stringify(pendingAction)); pendingAction = null; }
     else if (sess && (!qcode || qcode === sess.code) && !S) ws.send(JSON.stringify({ type: 'rejoin', code: sess.code, token: sess.token })); // auto-rejoin (load / reconnect / page visible again)
     else if (sess && S && S.code === sess.code) ws.send(JSON.stringify({ type: 'rejoin', code: sess.code, token: sess.token }));
@@ -78,7 +78,8 @@ function handle(m) {
   else if (m.type === 'camPeek') { photos[m.id] = m; renderPhotos(); if (m.data || m.unavailable) toast(`📷 Sneak peek: ${m.name}${m.data ? '' : ' — photo unavailable'}`); }
   else if (m.type === 'compass') { compassData = m; renderCompass(); }
   else if (m.type === 'startBlocked') { const names = m.outside.map(o => o.name + (o.noGps ? ' (no GPS)' : '')).join(', '); if (confirm(`Outside the playing field: ${names}. Start anyway?`)) sendMsg({ type: 'start', force: true }); else toast('Outside: ' + names, 5000); }
-  else if (m.type === 'state') { offset = m.serverNow - Date.now(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); }
+  else if (m.type === 'time') onTime(m);
+  else if (m.type === 'state') { offset = syncedOffset ?? (m.serverNow - Date.now()); if (m.revealAt && m.revealAt !== (S && S.revealAt) && m.revealAt > m.serverNow) timeSync(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); }
 }
 const me = () => S && S.players.find(p => p.id === S.you);
 const PU_INFO = { radar: ['📡', 'Hunter Radar'], jammer: ['📵', 'Jammer'], silent: ['🤫', 'Silent Shoes'], shield: ['🛡️', 'Shield'], extraTime: ['⏩', 'Extra Time'], revive: ['💖', 'Revive'],
@@ -475,6 +476,7 @@ function renderGame() {
   lastRound = S.round;
   show('game'); ensureMap(); setTimeout(() => map.invalidateSize(), 50);
   const m = me(), hunter = m.role === 'hunter';
+  if (S.revealAt && tnow() < S.revealAt) { $('roleBadge').textContent = '⏳'; $('roleBadge').style.background = '#374151'; } else
   $('roleBadge').textContent = hunter ? '🔦 HUNTER' : (m.caught ? '😵 CAUGHT' : '🙈 HIDER'); $('roleBadge').style.background = hunter ? '#dc2626' : (m.caught ? '#4b5563' : '#0891b2');
   $('hideCover').classList.toggle('hidden', !(hunter && S.state === 'hiding'));
   $('hunterPanel').classList.toggle('hidden', !hunter); $('hiderPanel').classList.toggle('hidden', hunter || m.caught);
@@ -658,7 +660,7 @@ function showRoleCard(kind) {
   $('rcBullets').innerHTML = (kind === 'infected' ? ['📡 You now get the hider pings', '🔦 You see the other hunters live', '🙌 Tag hiders, then confirm in the app'] : modeBullets(S.settings)).map(b => `<li>${esc(b)}</li>`).join('');
   tickRoleCard(); c.classList.remove('hidden');
 }
-function roleCardCheck(m) { if (S.round !== rcRound && (S.state === 'hiding' || (S.state === 'playing' && tnow() - S.startedAt < 8000))) { rcRound = S.round; showRoleCard('start'); } }
+function roleCardCheck(m) { if (revealCheck()) return; if (S.round !== rcRound && (S.state === 'hiding' || (S.state === 'playing' && tnow() - S.startedAt < 8000))) { rcRound = S.round; showRoleCard('start'); } }
 function tickRoleCard() {
   const c = $('roleCard'); if (c.classList.contains('hidden') || !S) return; const m = me(), t = tnow();
   if (rcMode === 'infected') { $('rcCount').textContent = ''; return; }
@@ -725,3 +727,91 @@ $('btnRejoin').onclick = () => { if (!sess) return; unlockAudio?.(); sendMsg({ t
   $('btnCopyLink').onclick = async () => { const u = link(); try { await navigator.clipboard.writeText(u); toast('Link copied — paste it into ' + (r.os === 'ios' ? 'Safari' : 'Chrome')); } catch { prompt('Copy this link:', u); } };
   $('inappClose').onclick = () => box.classList.toggle('mini'); // minimizes, but stays on the join screen
 })();
+
+// ---------- v13: clock sync + synced countdown & dramatic role reveal ----------
+let syncedOffset = null, tsSamples = [], tsBusy = false;
+function timeSync() { // a few NTP-style round trips over the WS; offset = best of the lowest-RTT samples
+  if (tsBusy) return; tsBusy = true; tsSamples = []; let n = 0;
+  const go = () => { if (n++ >= 6 || !ws || ws.readyState !== 1) { tsBusy = false; return; } sendMsg({ type: 'time', c: performance.timeOrigin + performance.now() }); setTimeout(go, 80); };
+  go();
+}
+function onTime(m) {
+  tsSamples.push(TimeSync.sampleOf(m.c, m.s, performance.timeOrigin + performance.now()));
+  const b = TimeSync.bestOffset(tsSamples); // performance clock ~ Date.now(), but monotonic within the page
+  syncedOffset = b.offset + (performance.timeOrigin + performance.now() - Date.now()); offset = syncedOffset; window.clockSync = { offset: syncedOffset, rtt: b.rtt, n: tsSamples.length };
+}
+const RVRM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+let rv = null; // active reveal: { round, R, fired:{}, raf }
+function revealCheck() { // true while the countdown/reveal owns the screen (role card waits)
+  if (!S || QUIET || !S.revealAt || !(S.state === 'hiding' || S.state === 'playing')) return false;
+  if (rv && rv.round === S.round) return !rv.done;
+  if (S.round === rcRound) return false;
+  if (tnow() >= S.revealAt + TimeSync.OUTRO) return false; // late joiner / reconnect after the reveal: straight to the role card
+  startReveal(); return true;
+}
+function startReveal() {
+  const o = $('reveal'); rv = { round: S.round, R: S.revealAt, fired: {}, done: false };
+  o.className = RVRM() ? 'rm' : ''; o.dataset.phase = ''; $('rvStage').innerHTML = ''; o.classList.remove('hidden'); document.body.classList.add('revealing');
+  let n = 0; try { n = +localStorage.getItem('scramGames') || 0; localStorage.setItem('scramGames', n + 1); } catch {}
+  $('rvSkip').classList.toggle('hidden', n < 1);
+  wake(); sizeRadar(); rv.raf = requestAnimationFrame(revealFrame);
+}
+function endReveal() {
+  if (!rv || rv.done) return; rv.done = true; cancelAnimationFrame(rv.raf);
+  $('reveal').classList.add('hidden'); document.body.classList.remove('revealing'); $('rvStage').innerHTML = '';
+  rcRound = S.round; showRoleCard('start'); window.revealDone = { at: Date.now(), srv: tnow() };
+}
+$('rvSkip').onclick = e => { e.stopPropagation(); endReveal(); };
+function rvGain(mult) { return chimeGain() * mult; } // host volume x soft factor (residential-friendly)
+function tone(fn) { if (!actx || actx.state !== 'running') return; try { fn(actx, actx.currentTime); } catch {} }
+function thump(i) { // heartbeat "lub-dub": two short low sine drops
+  tone((a, t) => { for (const [d, f, v] of [[0, 70, 1], [0.16, 58, 0.7]]) { const o = a.createOscillator(), g = a.createGain(); o.type = 'sine';
+    o.frequency.setValueAtTime(f * 1.6, t + d); o.frequency.exponentialRampToValueAtTime(f, t + d + 0.09);
+    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(rvGain(0.55 + i * 0.1) * v, t + d + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.22);
+    o.connect(g).connect(a.destination); o.start(t + d); o.stop(t + d + 0.25); } });
+}
+function hunterHit() { tone((a, t) => { const o = a.createOscillator(), o2 = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain();
+  o.type = 'sawtooth'; o2.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.6); o2.frequency.setValueAtTime(55, t);
+  f.type = 'lowpass'; f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(120, t + 0.6);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(rvGain(0.6), t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  o.connect(f); o2.connect(f); f.connect(g).connect(a.destination); o.start(t); o2.start(t); o.stop(t + 0.95); o2.stop(t + 0.95); }); }
+function hiderWhoosh() { tone((a, t) => { const len = a.sampleRate * 0.9, b = a.createBuffer(1, len, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(); src.buffer = b; f.type = 'bandpass'; f.Q.value = 1.2;
+  f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2400, t + 0.45); f.frequency.exponentialRampToValueAtTime(600, t + 0.85);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(rvGain(0.35), t + 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+  src.connect(f).connect(g).connect(a.destination); src.start(t); src.stop(t + 0.9); }); }
+function sizeRadar() { const c = $('rvRadar'), d = Math.min(devicePixelRatio || 1, 2); c.width = innerWidth * d; c.height = innerHeight * d; }
+function drawRadar(p) { // p 0..1 over the 600 ms sweep
+  const c = $('rvRadar'), x = c.getContext('2d'), w = c.width, h = c.height, cx = w / 2, cy = h / 2, r = Math.hypot(w, h) / 2;
+  x.clearRect(0, 0, w, h); x.strokeStyle = 'rgba(52,211,153,.35)'; x.lineWidth = 2;
+  for (let i = 1; i <= 4; i++) { x.beginPath(); x.arc(cx, cy, r * i / 4 * Math.min(1, p * 2), 0, 7); x.stroke(); }
+  const a = -Math.PI / 2 + p * Math.PI * 2 * 1.5, g = x.createConicGradient ? x.createConicGradient(a - 0.9, cx, cy) : null;
+  x.save(); x.beginPath(); x.moveTo(cx, cy); x.arc(cx, cy, r, a - 0.9, a); x.closePath();
+  if (g) { g.addColorStop(0, 'rgba(52,211,153,0)'); g.addColorStop(0.9 / 6.283, 'rgba(52,211,153,.55)'); g.addColorStop(1, 'rgba(52,211,153,0)'); x.fillStyle = g; } else x.fillStyle = 'rgba(52,211,153,.3)';
+  x.fill(); x.restore(); if (p > 0.8) { x.fillStyle = `rgba(255,255,255,${(p - 0.8) * 4})`; x.fillRect(0, 0, w, h); }
+}
+const NUM_I = { 3: 0, 2: 1, 1: 2 };
+function revealFrame() {
+  if (!rv || rv.done) return; rv.raf = requestAnimationFrame(revealFrame);
+  const dt = tnow() - rv.R, ph = TimeSync.phaseAt(dt), o = $('reveal');
+  if (ph === 'card' || S.round !== rv.round || !(S.state === 'hiding' || S.state === 'playing')) return endReveal();
+  if (ph === 'radar' && !o.classList.contains('rm')) drawRadar(Math.min(1, (dt + 600) / 600));
+  if (rv.fired[ph]) return; rv.fired[ph] = true;
+  const beat = TimeSync.BEATS.find(b => b.k === ph), late = beat ? dt - beat.at : 0, fresh = late < 150; // effects only when on time (late joiners jump silently)
+  o.dataset.phase = ph; window.revealLog = window.revealLog || []; window.revealLog.push({ ph, srv: tnow(), late });
+  const st = $('rvStage');
+  if (ph === 'hold') st.innerHTML = '<div class="rvHold">Hold your phones out!</div>';
+  else if (ph in NUM_I) { const i = NUM_I[ph]; st.innerHTML = `<div class="rvNum n${i}">${ph}</div>`; o.style.setProperty('--pulse', (0.9 - i * 0.25) + 's');
+    if (fresh) { thump(i); navigator.vibrate?.(60 + i * 30); } }
+  else if (ph === 'black') st.innerHTML = '';
+  else if (ph === 'radar') { st.innerHTML = ''; }
+  else if (ph === 'reveal') { // role element only enters the DOM now
+    const m = me(); if (!m) return; const hunter = m.role === 'hunter';
+    const team = hunter ? 'Team Hunters' : 'Team Hiders', inf = S.settings.caughtBecomeHunter ? (hunter ? '🧟 Infection: tagged hiders join you' : '🧟 Infection: if tagged, you turn hunter') : '';
+    o.classList.add(hunter ? 'hunter' : 'hider'); $('rvRadar').getContext('2d').clearRect(0, 0, 9999, 9999);
+    st.innerHTML = `<div id="rvRole" class="rvRole ${hunter ? 'hunter' : 'hider'}">${hunter ? '<div class="rvCross"><i></i><i></i><b></b></div>' : '<div class="rvFog"></div>'}<div class="rvWord">${hunter ? 'HUNTER' : 'HIDER'}</div><div class="rvTeam">${team}</div>${inf ? `<div class="rvInf">${inf}</div>` : ''}</div>`;
+    window.revealRole = { text: st.textContent, cross: !!st.querySelector('.rvCross'), fog: !!st.querySelector('.rvFog'), srv: tnow() }; render();
+    if (fresh) { if (hunter) { hunterHit(); navigator.vibrate?.([250, 60, 250]); } else { hiderWhoosh(); navigator.vibrate?.(80); } }
+  }
+}
+addEventListener('resize', () => { if (rv && !rv.done) sizeRadar(); });

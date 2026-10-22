@@ -88,7 +88,7 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   await host.page.waitForFunction(() => S.events.some(e => /Bob stayed out of bounds/.test(e.text)), null, { timeout: 10000 });
   check(true, 'grace (30 s scaled; 2 s min) elapsed -> Bob flagged for reveal');
   const n0 = host.frames.filter(x => x.type === 'ping').length;
-  for (let i = 0; i < 80 && host.frames.filter(x => x.type === 'ping').length <= n0; i++) await sleep(100);
+  for (let i = 0; i < 160 && host.frames.filter(x => x.type === 'ping').length <= n0; i++) await sleep(100);
   const pg = host.frames.filter(x => x.type === 'ping')[n0];
   check(pg && pg.locs[bobId] && Field.distM(pg.locs[bobId], outside) < 1, 'next ping reveals Bob to hunters');
   // walk back in -> banner clears

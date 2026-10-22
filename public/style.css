@@ -189,3 +189,33 @@ body.inGame #recQBtn{display:none}body.inGame:not(.recording) #recDock{top:auto;
 .btnLink,.btnLink:visited{color:#fff}
 body[data-inapp]:not(.inGame):not(.recording) #recDock{top:auto;bottom:calc(12px + env(safe-area-inset-bottom))}
 .busy{background:#78350f;border:1px solid #f59e0b;color:#fde68a;border-radius:12px;padding:12px 14px;margin:10px 0;font-weight:600;text-align:center}
+/* v13 synced countdown + role reveal */
+#reveal{position:fixed;inset:0;z-index:2700;background:#05070d;color:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;--pulse:.9s;touch-action:manipulation}
+#rvRadar{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#rvPulse{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle closest-side,#ffffff26,transparent)}
+#reveal[data-phase="3"] #rvPulse,#reveal[data-phase="2"] #rvPulse,#reveal[data-phase="1"] #rvPulse{animation:rvPulse var(--pulse) ease-out infinite}
+#reveal[data-phase="black"]{background:#000}#reveal[data-phase="black"] #rvPulse{display:none}
+#rvStage{position:relative;z-index:1;width:100%;padding:24px}
+.rvHold{font:900 2.6em/1.1 system-ui;animation:rvBreathe .75s ease-in-out infinite alternate;will-change:transform}
+.rvNum{font:900 11em/1 system-ui;animation:rvNum .9s cubic-bezier(.2,1.4,.4,1) both;will-change:transform,opacity}
+.rvNum.n1{animation-duration:.75s}.rvNum.n2{animation-duration:.6s;color:#fca5a5}
+#reveal.hunter{background:radial-gradient(circle at 50% 45%,#7f1d1d,#0a0000 75%)}#reveal.hider{background:radial-gradient(circle at 50% 45%,#0e7490,#020617 75%)}
+#reveal.hunter::after{content:'';position:absolute;inset:0;background:#ef4444;animation:rvFlash .45s ease-out both;pointer-events:none}
+#reveal.hider::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,#67e8f988 50%,transparent 70%);background-size:250% 100%;animation:rvShimmer 1.1s ease-out both;pointer-events:none}
+.rvRole{position:relative}.rvWord{font:900 4.4em/1 system-ui;letter-spacing:.08em}
+.rvRole.hunter .rvWord{color:#fecaca;text-shadow:0 0 18px #ef4444,0 0 42px #dc2626;animation:rvSlam .4s cubic-bezier(.2,1.5,.4,1) both}
+.rvRole.hider .rvWord{color:#cffafe;text-shadow:0 0 20px #22d3ee;animation:rvFade 1s ease-out .15s both}
+.rvTeam{margin-top:14px;font:800 1.2em system-ui;letter-spacing:.2em;text-transform:uppercase;opacity:.9}.rvRole.hunter .rvTeam{color:#f87171}.rvRole.hider .rvTeam{color:#67e8f9}
+.rvInf{margin-top:8px;opacity:.8}
+.rvCross{position:absolute;left:50%;top:50%;width:260px;height:260px;margin:-130px 0 0 -130px;border:3px solid #ef4444;border-radius:50%;animation:rvSnap .35s cubic-bezier(.2,1.6,.4,1) both;pointer-events:none;box-shadow:0 0 24px #ef444488}
+.rvCross i{position:absolute;background:#ef4444}.rvCross i:first-child{left:50%;top:-20px;bottom:-20px;width:3px;margin-left:-1.5px}.rvCross i:nth-child(2){top:50%;left:-20px;right:-20px;height:3px;margin-top:-1.5px}
+.rvFog{position:absolute;left:-30%;right:-30%;top:-120px;bottom:-120px;background:radial-gradient(ellipse at center,#e0f2fe 0%,#a5f3fc88 35%,transparent 70%);filter:blur(18px);animation:rvFog 1.4s ease-out both;pointer-events:none}
+#rvSkip{position:absolute;right:14px;bottom:max(14px,env(safe-area-inset-bottom));z-index:2;background:#ffffff1a;color:#fffb;border:1px solid #fff3;border-radius:999px;padding:6px 14px;font-size:.85em}
+@keyframes rvPulse{0%{opacity:.9;transform:scale(.6)}100%{opacity:0;transform:scale(1.4)}}
+@keyframes rvBreathe{from{transform:scale(.94);opacity:.8}to{transform:scale(1.06);opacity:1}}
+@keyframes rvNum{0%{transform:scale(2.2);opacity:0}35%{transform:scale(1);opacity:1}100%{transform:scale(.85);opacity:.55}}
+@keyframes rvFlash{from{opacity:.85}to{opacity:0}}@keyframes rvShimmer{from{background-position:120% 0;opacity:1}to{background-position:-40% 0;opacity:0}}
+@keyframes rvSlam{from{transform:scale(1.8);opacity:0}to{transform:none;opacity:1}}@keyframes rvFade{from{opacity:0;filter:blur(10px)}to{opacity:1;filter:none}}
+@keyframes rvSnap{from{transform:scale(2.4) rotate(45deg);opacity:0}to{transform:none;opacity:1}}@keyframes rvFog{from{opacity:1;transform:scale(.8)}to{opacity:0;transform:scale(1.6)}}
+#reveal.rm *{animation:none!important}#reveal.rm::after{display:none}#reveal.rm #rvStage>*{animation:rvFade .4s ease-out both!important}#reveal.rm .rvCross,#reveal.rm .rvFog{display:none}
+@media (prefers-reduced-motion:reduce){#reveal *,#reveal::after{animation-duration:.01s!important;animation-iteration-count:1!important}#reveal #rvStage>*{animation:rvFade .4s ease-out both!important}}

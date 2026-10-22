@@ -63,6 +63,7 @@ const clampNum = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? 
 
 function createApp(opts = {}) {
   const now = opts.now || (() => Date.now());
+  const revealMs = Math.max(0, Number(opts.revealMs ?? 0) || 0); // v13 synced countdown: timers start at revealAt (no hide time lost)
   const minSec = opts.minSec ?? 1; // tests can use fractional seconds
   const lobbies = new Map();
   const app = express();
@@ -156,7 +157,7 @@ function createApp(opts = {}) {
       return o;
     });
     const v = { type: 'state', code: L.code, you: me.id, host: L.hostId, state: L.state, settings: L.settings,
-      serverNow: t, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, nextPingAt: L.nextPingAt,
+      serverNow: t, revealAt: L.revealAt || 0, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, nextPingAt: L.nextPingAt,
       winner: L.winner, maxPlayers: MAX_PLAYERS, players, pingCount: L.pings.length, events: L.events.slice(-8) };
     v.field = curField(L); v.baseField = L.field; v.shrinkUntil = L.shrink ? L.shrink.until : 0; v.oobGraceMs = oobGrace(L);
     if (me.outSince) v.outSince = me.outSince;
@@ -225,7 +226,7 @@ function createApp(opts = {}) {
   // (scheduled or bounty) reveals their TRUE position, ignoring decoys and wipes.
   const oobGrace = L => Math.max(opts.oobMinMs ?? 2000, 30000 * scale(L));
   function checkBounds(L) {
-    const t = now(), running = L.state === 'playing' || L.state === 'hiding';
+    const t = now(), running = (L.state === 'playing' || L.state === 'hiding') && t >= (L.revealAt || 0); // grace starts at the reveal
     for (const p of L.players.values()) {
       const out = running && !!curField(L) && !(p.role === 'hider' && p.caught) && !!p.loc && !Field.inField(curField(L), p.loc);
       if (out && !p.outSince) { p.outSince = t; event(L, `⚠️ ${p.name} is out of bounds`); logEv(L, 'oob', { id: p.id, on: true }, `⚠️ ${p.name} left the field`); broadcast(L); }
@@ -556,6 +557,7 @@ function createApp(opts = {}) {
     let L = null, me = null;
     ws.on('message', raw => {
       let m; try { m = JSON.parse(raw); } catch { return; }
+      if (m.type === 'time') return send(ws, { type: 'time', c: Number(m.c) || 0, s: now() }); // NTP-style clock sync round trip
       if (!me) {
         if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
         const dev = typeof m.dev === 'string' ? m.dev : null, ref = normHandle(String(m.ref || '')) || null, social = socialIn(m);
@@ -639,7 +641,7 @@ function createApp(opts = {}) {
             const outside = ps.filter(p => !p.loc || !Field.inField(L.field, p.loc)).map(p => ({ id: p.id, name: p.name, noGps: !p.loc }));
             if (outside.length) return send(ws, { type: 'startBlocked', outside });
           }
-          const t = now(); L.startedAt = t; stats.gameStarted(); for (const p of L.players.values()) if (p.social) stats.handle(p.social, { played: true }); L.hideEndsAt = t + L.settings.hideSec * 1000;
+          const t = now() + revealMs; L.revealAt = t; L.startedAt = t; stats.gameStarted(); for (const p of L.players.values()) if (p.social) stats.handle(p.social, { played: true }); L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
           L.chimeTest = null;
           L.state = L.settings.hideSec > 0 ? 'hiding' : 'playing'; L.round++; L.pings = []; L.events = [];
@@ -709,7 +711,7 @@ function createApp(opts = {}) {
 
 module.exports = { BUSY_MSG, createApp, distM, bearingDeg, offsetM };
 if (require.main === module) {
-  const { server } = createApp();
+  const { server } = createApp({ revealMs: process.env.SCRAM_REVEAL_MS ?? 5500 });
   const port = process.env.PORT || 3000;
   server.listen(port, () => console.log('Scram listening on :' + port));
 }
