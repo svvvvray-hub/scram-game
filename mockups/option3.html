@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="common.css"><script src="vendor/leaflet.js"></script><script src="common.js"></script><title>3 Radar</title><style>
+#wrap{position:absolute;z-index:2050;right:12px;bottom:90px;width:45%;aspect-ratio:1;border-radius:50%;overflow:hidden;border:3px solid #facc15;box-shadow:0 0 0 3px #0008,0 6px 20px #000a;transition:all .3s}
+#wrap .mapbox{opacity:.8}#wrap.exp{right:0;bottom:0;width:100%;height:100%;aspect-ratio:auto;border-radius:0;border:0;box-shadow:none}
+#wrap.exp .mapbox{opacity:.55}#wrap::after{content:'';position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 30%,#facc1533 30% 31%);pointer-events:none;z-index:500}#wrap.exp::after{display:none}
+.hint{position:absolute;z-index:2060;right:12px;bottom:72px;width:45%;text-align:center;font-size:.7em;color:#fff;text-shadow:0 1px 3px #000}
+</style></head><body class="dark"><div class="cam"></div><div id="wrap"><div class="mapbox" id="m"></div></div><div class="hint" id="h">tap radar to expand</div>
+<script>const map=mkMap('m',{bold:true,zoom:14,interactive:false});hud();rec('left:12px;top:76px');decoy();label('Option 3 · Camera + radar mini-map');
+wrap.onclick=()=>{wrap.classList.toggle('exp');h.style.display=wrap.classList.contains('exp')?'none':'';setTimeout(()=>{map.invalidateSize();map.setView(C,wrap.classList.contains('exp')?15:14)},320)}</script></body></html>

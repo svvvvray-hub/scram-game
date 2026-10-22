@@ -1,0 +1,214 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0f1115">
+<title>Privacy Policy · Last Ping</title><style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#0f1115;color:#e6e8ec;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:760px;margin:0 auto;padding:20px 18px 64px}
+nav{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;margin-bottom:8px}
+h1{font-size:1.7rem;line-height:1.25;margin:.4em 0 .6em}
+h2{font-size:1.2rem;margin:1.8em 0 .5em;padding-top:.6em;border-top:1px solid #262a33}
+a{color:#7cc4ff}
+blockquote{margin:1em 0;padding:12px 14px;background:#2a2110;border-left:4px solid #f5b942;border-radius:6px;color:#f3e6c8}
+blockquote p{margin:0}
+code{background:#1c2029;padding:1px 5px;border-radius:4px;font-size:.92em}
+hr{border:0;border-top:1px solid #262a33;margin:2em 0}
+ul,ol{padding-left:1.3em} li{margin:.3em 0}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{border:1px solid #2c313c;padding:8px;vertical-align:top;text-align:left}
+th{background:#1a1e26}
+strong{color:#fff}
+footer{margin-top:3em;font-size:13px;color:#8a91a0}
+</style></head><body><main>
+<nav><a href="/">← Back to Last Ping</a><a href="terms.html">Terms of Service</a></nav>
+<h1>Last Ping: Privacy Policy</h1>
+<blockquote>
+<p><strong>DRAFT TEMPLATE. NOT LEGAL ADVICE.</strong> This document is a starting template for Murray Nguyen to review. It is not legal advice, and no attorney has reviewed it. Before you monetize Last Ping, have a lawyer licensed in California review and adapt it. That especially applies before you add payments (Stripe), ads (e.g., Google), accounts, analytics, or a database. Each of those changes what this policy must say. Items in <code>[BRACKETS]</code> are placeholders. Check every factual statement against how the app actually works before you publish.</p>
+</blockquote>
+<p><strong>Effective date:</strong> [DATE] · <strong>Last updated:</strong> [DATE]</p>
+<h2>The short version (plain English)</h2>
+<p>This summary is here to make the policy easier to read. It is not a substitute for it. The full policy below is what counts.</p>
+<ul>
+<li><strong>No accounts, no database, no tracking cookies.</strong> We run the game in server memory. When a round, lobby, or server ends, that game data is gone.</li>
+<li><strong>Your location is the core of the game.</strong> During a game your phone sends your GPS location to our server. Hunters see hiders' locations at each "ping," about every 60 seconds by default. Your location trail is kept in memory for the round so we can show the end-of-round recap. Then it is discarded.</li>
+<li><strong>Other players see what you share:</strong> your display name, your Instagram handle if you add one, your role, your in-game status, and some of your location.</li>
+<li><strong>The camera snapshot is opt-in.</strong> If you consent in the lobby, hunters see one photo from your rear camera at minute 10. It is kept in memory for that round only.</li>
+<li><strong>Your video stays on your phone</strong> unless you tap "Send my highlights to host." Then short highlight cuts go to the server and are kept in memory for <strong>30 minutes at most</strong>.</li>
+<li><strong>We do not sell your personal information,</strong> and we don't share it for targeted advertising.</li>
+<li><strong>18+ only.</strong> We don't knowingly collect data from children.</li>
+<li><strong>Questions or requests:</strong> [CONTACT EMAIL].</li>
+</ul>
+<hr />
+<h2>1. Who we are</h2>
+<p>Last Ping (the "<strong>Game</strong>") is a free, browser-based GPS hide-and-seek game. It is created and operated by Murray Nguyen, an individual in California, United States ("<strong>we</strong>," "<strong>us</strong>," or "<strong>our</strong>"). This Privacy Policy explains what information the Game handles, how we use it, who can see it, and how long we keep it. It is part of our <a href="terms.html">Terms of Service</a>.</p>
+<h2>2. Information we handle</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>What</th>
+<th>When</th>
+<th>Who sees it</th>
+<th>How long we keep it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Display name</strong></td>
+<td>You type it to create or join a lobby</td>
+<td>Everyone in your lobby</td>
+<td>Server memory until you leave or the lobby closes</td>
+</tr>
+<tr>
+<td><strong>Instagram handle</strong> (optional)</td>
+<td>You add it when joining</td>
+<td>Everyone in your lobby (shown as a link to your profile); may appear in recaps and shared links</td>
+<td>Same as display name</td>
+</tr>
+<tr>
+<td><strong>Lobby code and a random session token</strong></td>
+<td>When you join</td>
+<td>The token is used only by your browser and our server, to reconnect you</td>
+<td>Server memory while the lobby exists; on your device until you leave the lobby</td>
+</tr>
+<tr>
+<td><strong>Live GPS location</strong> (latitude, longitude, accuracy)</td>
+<td>During a game, sent repeatedly (roughly every few seconds while moving, at least every ~15 s)</td>
+<td>See section 3</td>
+<td>Server memory for the round</td>
+</tr>
+<tr>
+<td><strong>Location trail</strong></td>
+<td>Built from the location pings during a round</td>
+<td>Players in your lobby, in the end-of-round recap</td>
+<td>Until <strong>Play again</strong>, the lobby closes, or the server restarts</td>
+</tr>
+<tr>
+<td><strong>Camera snapshot</strong> (optional; "hider cam sneak peek")</td>
+<td>Minute 10, only if you're a hider and tapped "allow camera" in the lobby</td>
+<td>Hunters in your lobby only</td>
+<td>Server memory for that round only; never written to disk</td>
+</tr>
+<tr>
+<td><strong>Highlight cuts</strong> (optional)</td>
+<td>Only if you tap "Send my highlights to host"</td>
+<td>The lobby host (for a group highlight reel)</td>
+<td>Server memory for <strong>30 minutes at most</strong>, or less if Play again starts or the lobby closes</td>
+</tr>
+<tr>
+<td><strong>Video you record</strong></td>
+<td>When you use Record</td>
+<td>Only you; it stays on your device</td>
+<td>We never receive it (unless you send highlights, as above)</td>
+</tr>
+<tr>
+<td><strong>Referral visits</strong></td>
+<td>When someone opens a link with <code>?ref=&lt;handle&gt;</code></td>
+<td>Us</td>
+<td>The count is kept in server memory; each visit is also written to our server logs (handle and page). See section 6</td>
+</tr>
+<tr>
+<td><strong>Technical data</strong></td>
+<td>Every request</td>
+<td>Us, our host, and the map tile provider</td>
+<td>See section 6</td>
+</tr>
+</tbody>
+</table></div>
+<p>We <strong>do not</strong> collect your real name, email address, phone number, contacts, or payment information. We do not ask for them, and we have no account system.</p>
+<p><strong>Your device.</strong> The Game saves a few items in your browser's <strong>localStorage</strong> so you don't have to retype them: your display name, Instagram handle, camera-consent choice, settings, and your current lobby session. Some layout preferences are saved in <strong>sessionStorage</strong>. These items stay on your device. Leaving a lobby removes the lobby session. To remove everything else, clear this site's data in your browser settings. <strong>We do not use cookies.</strong> We use no advertising or analytics trackers.</p>
+<h2>3. How location sharing works</h2>
+<ul>
+<li><strong>Hiders:</strong> the server receives your live location. <strong>Hunters do not see it live.</strong> They receive a snapshot of your location at each scheduled "ping" (about every 60 seconds by default; the host can change this). Hunters may also get extra or modified pings from game events, such as bounties, the out-of-bounds penalty, or a ghost decoy. In the final "sudden death" phase, hunters see only a compass direction and a rough distance band to the nearest hider, not coordinates.</li>
+<li><strong>Hunters:</strong> other hunters on your team can see your location live.</li>
+<li><strong>Everyone:</strong> other players may see whether you are inside or outside the playing field (an in/out flag only). The host's location may be used to center the playing field.</li>
+<li><strong>Recap:</strong> at the end of a round, players in your lobby can see each hider's ping trail on a map.</li>
+<li>Location sharing stops when the round ends or you leave the lobby or close the page. You can deny location permission in your browser at any time, but then the game won't work for you.</li>
+</ul>
+<p><strong>Please don't play from, or end a game at, your home</strong> or any other place you want to keep private. See our Terms of Service.</p>
+<h2>4. How we use information</h2>
+<p>We use the information above only to:</p>
+<ul>
+<li>run the Game, including lobbies, roles, timers, pings, power-ups, the playing field, catches, recaps, photos, and highlight reels;</li>
+<li>reconnect you if you refresh the page or your screen locks;</li>
+<li>count referral visits, so creators can see how many people their links bring in;</li>
+<li>keep the Game secure, prevent abuse, and fix bugs; and</li>
+<li>comply with the law.</li>
+</ul>
+<p>We do not use your location or other data for advertising, profiling, or any purpose unrelated to playing the Game.</p>
+<h2>5. Who we share information with</h2>
+<ul>
+<li><strong>Other players in your lobby,</strong> as described above. They may take screenshots, or download or share recap images and highlight reels. <strong>Once they do, that copy is outside our control.</strong> Play only with people you trust with this information.</li>
+<li><strong>Service providers.</strong> These process data on our behalf so the Game can run:</li>
+<li><strong>Render</strong> (render.com) hosts our server in the United States. It processes the traffic and server logs (see section 6).</li>
+<li><strong>OpenStreetMap</strong> map tiles are loaded directly by your browser from OpenStreetMap servers. Those servers receive your IP address and the map area being viewed, as with any website request. See the OpenStreetMap Foundation's privacy policy.</li>
+<li><strong>Instagram (Meta):</strong> if you tap a player's handle or "Follow," you leave the Game and go to Instagram, where Instagram's policies apply.</li>
+<li><strong>Legal reasons:</strong> we may disclose information if the law requires it, or to protect someone's safety. Because we keep almost nothing, we usually have nothing to disclose.</li>
+<li><strong>Business transfer:</strong> if the Game is transferred to a new owner or entity, this policy will continue to apply to any information transferred.</li>
+</ul>
+<p><strong>We do not sell your personal information. We do not "share" it for cross-context behavioral advertising</strong> (as those terms are defined under California law). We have not done either in the past 12 months.</p>
+<h2>6. Server logs and technical data</h2>
+<p>Like most websites, our server and our hosting provider automatically handle technical data, such as your IP address, browser type, the pages you request, and timestamps. Our application writes a small amount of information to the server console, for example referral visits (the referring handle and page) and server events. Our host may keep these logs for a limited period under its own retention settings, [RENDER LOG RETENTION, e.g. 7 days on the free plan; confirm]. We use logs only to operate and debug the Game and prevent abuse.</p>
+<h2>7. How long we keep information</h2>
+<p>The Game has <strong>no database</strong>. All game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:</p>
+<ul>
+<li><strong>at "Play again"</strong> (trails, catches, photos, recaps, and highlights from the previous round are wiped);</li>
+<li><strong>when you leave the lobby</strong> (your player entry is removed);</li>
+<li><strong>when the lobby closes</strong>, that is, when the last player leaves or after about 1 hour with no game running (a running round is capped at 6 hours);</li>
+<li><strong>when the server restarts or sleeps</strong>, which on our free hosting can happen after a period of inactivity; and</li>
+<li><strong>for highlight cuts, after 30 minutes at most.</strong></li>
+</ul>
+<p>Referral visit counts are kept in memory until the server restarts. Server logs are kept as described in section 6.</p>
+<h2>8. Your choices</h2>
+<ul>
+<li>Use any display name you like (within our conduct rules), and leave the Instagram field blank if you prefer.</li>
+<li>Tap <strong>"Ready without camera"</strong> to opt out of the camera snapshot.</li>
+<li>Keep your videos on your device. Don't tap "Send my highlights to host."</li>
+<li>Deny or revoke location, camera, or microphone permissions in your browser settings. Some features won't work without them.</li>
+<li>Clear this site's data in your browser to remove locally stored items. Leaving a lobby removes only the lobby session.</li>
+</ul>
+<h2>9. California privacy rights (CCPA/CPRA)</h2>
+<p>If you are a California resident, the California Consumer Privacy Act, as amended by the California Privacy Rights Act ("<strong>CCPA</strong>"), may give you rights over your personal information. We aim to respect these rights even where the law may not strictly apply to a small, free project like ours.</p>
+<p><strong>Categories of personal information we handle (past 12 months):</strong></p>
+<ul>
+<li><strong>identifiers</strong>: display name, Instagram handle, IP address, and session token;</li>
+<li><strong>geolocation data</strong>: <strong>precise geolocation</strong>, which is "sensitive personal information" under the CCPA;</li>
+<li><strong>audio, electronic, and visual information</strong>: the optional camera snapshot and optional highlight cuts; and</li>
+<li><strong>internet or network activity</strong>: server logs and referral visits.</li>
+</ul>
+<p><strong>Sources:</strong> you and your device. <strong>Purpose:</strong> to provide the Game, as described in section 4. <strong>Disclosed to:</strong> other players in your lobby and our service providers, as described in section 5.</p>
+<p><strong>Sensitive personal information.</strong> We use precise geolocation and camera images only to provide the Game features you request. We do not use them to infer characteristics about you. Because of this, the CCPA right to limit the use of sensitive personal information does not currently apply. If that ever changes, we will update this policy and offer a way to limit.</p>
+<p><strong>Your rights</strong> may include the right to:</p>
+<ul>
+<li><strong>know or access</strong> the personal information we have about you;</li>
+<li><strong>delete</strong> it;</li>
+<li><strong>correct</strong> it;</li>
+<li><strong>opt out of the sale or sharing</strong> of it (we don't sell or share it);</li>
+<li><strong>limit</strong> the use of sensitive personal information; and</li>
+<li><strong>not be discriminated against</strong> for exercising these rights.</li>
+</ul>
+<p><strong>How to make a request:</strong> email [CONTACT EMAIL] with "California privacy request" in the subject. You may also use an authorized agent. Because we have no accounts and delete game data at the end of each round or lobby, we usually hold <strong>no personal information that we can link to you</strong> after your game ends. We may ask for details, such as your display name, lobby code, and the approximate date and time, to look for anything that remains, for example in server logs. We will respond within the time the law requires (generally 45 days).</p>
+<p><strong>Global Privacy Control / Do Not Track.</strong> We don't sell or share personal information or track you across sites, so there is currently nothing for these signals to opt you out of. If we add advertising, we will honor Global Privacy Control signals as required by law.</p>
+<p><strong>Retention:</strong> see section 7.</p>
+<h2>10. Children</h2>
+<p>The Game is intended <strong>only for people 18 and older</strong>. See our Terms of Service for why. We do not knowingly collect personal information from anyone under 18, and certainly not from children under 13, in line with the U.S. Children's Online Privacy Protection Act (COPPA). If you believe a child has used the Game, contact us at [CONTACT EMAIL] and we will delete any information we can identify. Because game data is held only in memory, it is usually already gone.</p>
+<h2>11. Future features: payments, ads, and third parties</h2>
+<p>The Game currently has <strong>no payments and no ads</strong>. We may later add:</p>
+<ul>
+<li><strong>Optional cosmetic purchases</strong> processed by <strong>Stripe</strong>. Stripe would collect your payment details under its own privacy policy, and we would not see your full card number.</li>
+<li><strong>Ads, including optional "rewarded" ads,</strong> from providers such as <strong>Google</strong>. Ad providers may use cookies, device identifiers, or similar technology, and may collect information such as your IP address and ad interactions. In some cases that is used for personalized advertising.</li>
+<li><strong>Accounts, analytics, or a database</strong> to save progress or purchases.</li>
+</ul>
+<p><strong>Before</strong> we launch any of these features, we will update this Privacy Policy to describe exactly what is collected and by whom, and to explain your choices. If we ever "sell" or "share" personal information as California defines those terms, we will add a <strong>"Do Not Sell or Share My Personal Information"</strong> link, along with any consent prompts the law requires.</p>
+<h2>12. Security</h2>
+<p>We limit what we collect and keep it only in memory, and that is our main protection. The Game is served over HTTPS. Hiders' coordinates are sent to hunters only at ping time. However, no system is perfectly secure. Anyone with a lobby code or link can join that lobby, so share codes only with people you intend to play with.</p>
+<h2>13. International users</h2>
+<p>The Game is operated from, and hosted in, the United States. If you use it from elsewhere, your information will be processed in the United States.</p>
+<h2>14. Changes to this policy</h2>
+<p>We may update this policy. When we do, we will change the "Last updated" date. If a change is material, especially one that adds new kinds of data collection, we will give notice in the Game before the change applies.</p>
+<h2>15. Contact</h2>
+<p>Murray Nguyen (Last Ping)
+Email: <strong>[CONTACT EMAIL, e.g. privacy@yourdomain.com]</strong>
+Instagram: <a href="https://www.instagram.com/mmmmmray/">@mmmmmray</a>
+California, United States</p>
+<footer>Last Ping · <a href="terms.html">Terms of Service</a></footer></main></body></html>

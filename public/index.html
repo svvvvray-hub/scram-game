@@ -10,6 +10,7 @@
   <label>Instagram (optional)<input id="ig" maxlength="80" autocomplete="off" autocapitalize="none" placeholder="@yourhandle"></label>
   <p class="note igNote">Shown only in the lobby and the end-of-game recap / share image — never during a game.</p>
   <label class="chk agree"><input id="agree" type="checkbox"> <span>I'm 18+ and agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a></span></label>
+  <button class="big rulesBtn" data-rules>📖 How to play</button>
   <button id="btnCreate" class="big primary" disabled>Connecting…</button>
   <div class="or">or join</div>
   <label>Join code<input id="code" maxlength="5" autocapitalize="characters" placeholder="ABCDE"></label>
@@ -23,6 +24,7 @@
     <img id="qr" alt="QR code"><div><button id="btnShare" class="small">Share link</button> <span id="joinUrl" class="mono"></span></div></div>
   <div id="gpsStatus" class="gps"></div>
   <button id="btnGps" class="big">Enable location</button>
+  <button class="big rulesBtn" data-rules>📖 How to play</button>
   <p id="hostName" class="note"></p><h3>Players <span id="roleCounts" class="note"></span></h3><ul id="playerList" class="players"></ul>
   <div id="fieldPanel">
     <h3>Playing field</h3>
@@ -141,6 +143,7 @@
   <p class="note">Trails stay only until the next round starts. The lobby is deleted when everyone leaves or after 1 h without a game.</p>
 </section>
 </div>
+<div id="rulesSheet" class="hidden"><div class="sheetHead"><b>📖 How to play</b><button id="rulesClose" class="small">✕ Close</button></div><iframe id="rulesFrame" title="How to play"></iframe></div>
 <div id="toast" class="hidden"></div>
 <div id="chimeFlash" class="hidden"></div>
 <div id="recPreview" class="hidden"><video id="recVid" muted playsinline autoplay></video><video id="recPip" class="hidden" muted playsinline autoplay></video></div>

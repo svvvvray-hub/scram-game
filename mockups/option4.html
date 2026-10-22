@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="common.css"><script src="vendor/leaflet.js"></script><script src="common.js"></script><title>4 Strip</title><style>
+.strip{position:absolute;z-index:2050;left:0;right:0;top:60px;height:22dvh;overflow:hidden;border-bottom:3px solid #ef4444;transition:height .25s}
+.strip.col{height:0;border:0}.pillrec{position:absolute;z-index:2100;left:50%;transform:translateX(-50%);top:calc(60px + 22dvh - 18px);transition:top .25s}
+body.col .pillrec{top:68px}.pillrec .recbar{position:static}
+#m{top:60px}
+</style></head><body><div class="mapbox" id="m"></div><div class="strip" id="s"><div class="cam"></div></div>
+<div class="pillrec" id="p"></div>
+<script>const map=mkMap('m');hud();decoy();label('Option 4 · Map + collapsible camera strip');
+p.innerHTML='<div class="recbar"><span class="recDot"></span><b>REC</b><span style="color:#fff">01:23</span><button id="t">▴ Hide</button><button>🔄</button><button class="danger">■</button></div>';
+t.onclick=()=>{s.classList.toggle('col');document.body.classList.toggle('col');t.textContent=s.classList.contains('col')?'▾ Cam':'▴ Hide'}</script></body></html>

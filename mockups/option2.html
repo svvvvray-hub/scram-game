@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="common.css"><script src="vendor/leaflet.js"></script><script src="common.js"></script><title>2 PiP</title><style>
+.pip{position:absolute;z-index:2050;right:12px;top:150px;width:35%;aspect-ratio:3/4;border-radius:16px;overflow:hidden;border:2px solid #fff;box-shadow:0 6px 20px #000a;touch-action:none}
+.pip .cam,.pip .mapbox{pointer-events:none}.pip .tag{position:absolute;left:6px;bottom:6px;background:#000a;font-size:.65em;padding:2px 6px;border-radius:6px;z-index:5}
+#big{position:absolute;inset:0;padding:0;margin:0}
+</style></head><body><div id="big"><div class="mapbox" id="m"></div></div>
+<div class="pip" id="pip"><div class="cam" id="cam"></div><span class="tag">tap to swap · drag</span></div>
+<script>const map=mkMap('m');hud();rec('left:12px;top:76px');decoy();label('Option 2 · Map + draggable camera PiP');
+let swapped=false;drag(pip,()=>{swapped=!swapped;const mb=document.getElementById('m');(swapped?pip:big).prepend(mb);(swapped?big:pip).prepend(cam);mb.style.pointerEvents=swapped?'none':'';map.invalidateSize()})</script></body></html>

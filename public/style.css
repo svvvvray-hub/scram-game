@@ -99,3 +99,4 @@ body.jammed #arrow{animation:spin .6s linear infinite}@keyframes spin{to{transfo
 select{display:block;width:100%;font-size:18px;padding:10px;border-radius:10px;background:#1f2937;color:#fff;border:1px solid #374151;margin-top:4px}
 input[type=range]{padding:0}
 .chimeVoteBox{background:#1e3a8a;border-radius:12px;padding:10px;margin:10px 0}.chimeVoteBox button.on{background:#16a34a}
+.rulesBtn{background:#2563eb}#rulesSheet{position:fixed;inset:0;z-index:2700;background:#111827;display:flex;flex-direction:column}#rulesSheet .sheetHead{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;padding-top:max(8px,env(safe-area-inset-top));background:#0b1220}#rulesFrame{flex:1;border:0;width:100%;background:#111827}

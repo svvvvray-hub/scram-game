@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827"><title>How to play · Last Ping</title>
+<style>
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:64px}body{margin:0;background:#111827;color:#e5e7eb;font:17px/1.55 system-ui,-apple-system,sans-serif}
+a{color:#93c5fd}header{padding:14px 16px 4px;max-width:720px;margin:0 auto}h1{margin:.2em 0;font-size:1.9em;color:#fff}.sub{color:#9ca3af;margin:0}
+nav.toc{position:sticky;top:0;z-index:5;background:#0b1220f2;backdrop-filter:blur(6px);border-bottom:1px solid #1f2937;overflow-x:auto;white-space:nowrap;padding:8px 10px}
+nav.toc a{display:inline-block;padding:6px 10px;margin-right:4px;border-radius:99px;background:#1f2937;color:#e5e7eb;text-decoration:none;font-size:.85em}
+main{max-width:720px;margin:0 auto;padding:8px 14px 40px}
+details{background:#1f2937;border-radius:14px;margin:10px 0;padding:0 14px}details[open]{padding-bottom:10px}
+summary{cursor:pointer;font-weight:800;font-size:1.1em;padding:14px 0;list-style:none;color:#fff}summary::-webkit-details-marker{display:none}summary::after{content:'＋';float:right;color:#9ca3af}details[open] summary::after{content:'－'}
+.v{color:#fde047;font-weight:700}table{width:100%;border-collapse:collapse;font-size:.92em}td,th{padding:6px 4px;border-top:1px solid #374151;vertical-align:top;text-align:left}th{color:#9ca3af;font-weight:600}
+.rare{background:#7c2d12;border-radius:6px;padding:0 5px;font-size:.8em;color:#fff}.tip{background:#1e3a8a;border-radius:10px;padding:8px 10px;margin:8px 0}.warn{background:#7f1d1d;border-radius:10px;padding:8px 10px}
+.back{display:inline-block;margin:10px 0;color:#fff;text-decoration:none;background:#374151;padding:8px 14px;border-radius:10px}
+ul{padding-left:1.2em}li{margin:3px 0}
+</style></head><body>
+<header><a class="back" href="/" target="_top">← Back to Last Ping</a><h1>📖 How to play</h1><p class="sub">GPS hide &amp; seek in your phone's browser. Tap a section to open it.</p></header>
+<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
+<main>
+<details id="goal" open><summary>🎯 Goal &amp; roles</summary>
+<p><b>Hiders 🙈</b> try to stay uncaught until the clock runs out. <b>Hunters 🔦</b> try to catch every hider first. The host picks roles (any number of hunters, at least one) or taps 🎲 Randomize.</p>
+<p>Hunters never see hiders live — only where they were at each <b>ping</b>. Hunters see each other live. Your own dot is always green.</p>
+<p><b>Infection (on by default):</b> when you're caught you become a hunter, start getting pings, and help hunt the rest.</p>
+<p><b>Catching:</b> tag someone in real life, then confirm it in the app. A hider taps <i>I got caught</i> → the nearest hunter within <span class="v" data-v="catchRadiusM">30</span> m (any hunter if there's no GPS) gets a Confirm prompt. Or a hunter taps <i>I caught someone</i> and picks the hider, who confirms. The other side has <span class="v" data-v="catchConfirmSec">20</span> s to confirm; the host can confirm or cancel any claim. Hunters win when every hider is caught; hiders win if anyone is left when time's up.</p></details>
+
+<details id="timing"><summary>⏱ Timing</summary><ul>
+<li>A standard game is <span class="v" data-v="gameMin">20</span> minutes (host can change it; all the timings below scale with game length).</li>
+<li><b>Head start:</b> <span class="v" data-v="hideSec">120</span> s for hiders to run; hunters' maps are covered.</li>
+<li><b>Pings</b> every <span class="v" data-v="pingSec">60</span> s: hunters see each hider's spot at that moment (with an accuracy circle).</li>
+<li><b>Cam peek</b> at minute <span class="v" data-v="camMin">10</span>: hunters get one photo from each consenting hider's rear camera (no location).</li>
+<li><b>Sudden death</b> from minute <span class="v" data-v="compassFromMin">18</span> (the last 2 min): map pings stop and hunters get a compass that points at their nearest hider, with a hot/cold band. No bounties or power-ups.</li></ul></details>
+
+<details id="field"><summary>🟨 Playing field &amp; out of bounds</summary>
+<p>The host can draw a boundary: a circle (¼, ½ or 1 mile), a drawn shape, or both (then the field is where they overlap). Outside is shaded dark.</p>
+<p>Leave the field and you get a loud warning. A hider who stays out for <span class="v" data-v="oobGraceSec">30</span> s is revealed at their <b>true</b> spot on the next ping (decoys don't help).</p></details>
+
+<details id="decoy"><summary>👻 Decoys</summary><p>Each hider has <span class="v" data-v="decoys">2</span> decoys per round. Arm one and your <b>next</b> ping shows hunters a fake spot <span class="v" data-v="decoyMinM">30</span>–<span class="v" data-v="decoyMaxM">150</span> m away. Not available in sudden death.</p></details>
+
+<details id="chime"><summary>🔔 The chime</summary>
+<p>At each ping, any hider within <span class="v" data-v="chimeM">40</span> m of a hunter <b>chimes</b>: a soft sound plays on the hider's phone, it vibrates and the screen flashes. Hunters only learn "a hider chimed nearby" — no location. So stand still and hide your phone!</p>
+<p>The chime is gentle and defaults to <span class="v" data-v="chimeVolDefault">25</span>% volume (we play in neighbourhoods). The host can set 10–100% and test it on every phone; tap <i>🔔 Check your sound</i> in the lobby. Websites can't override silent mode or your volume.</p></details>
+
+<details id="bounty"><summary>💰 Bounties</summary><p>Every <span class="v" data-v="bountyEveryMin">5</span> min a 💰 appears on everyone's map. Get within <span class="v" data-v="bountyRadiusM">15</span> m to claim it. A hider who claims it wipes their next ping (hunters see nothing). A hunter who claims it triggers an instant surprise ping of every hider.</p></details>
+
+<details id="power"><summary>🎁 Power-ups</summary>
+<p><b>Drops</b> appear every <span class="v" data-v="dropEveryMin">3</span> min (host setting: Off / Normal / Chaos = every <span class="v" data-v="chaosEverySec">90</span> s), alternating hider drops and hunter drops — none in the first <span class="v" data-v="noDropsFirstMin">2</span> min or in sudden death. They spawn <span class="v" data-v="dropMinM">50</span>–<span class="v" data-v="dropMaxM">200</span> m from a player, inside the field, and vanish after <span class="v" data-v="dropTtlMin">2.5</span> min.</p>
+<ul><li>🎁 <b>Hider drops</b> are visible only to hiders. ⚡ <b>Hunter drops</b> are visible to everyone.</li>
+<li><b>Pick up:</b> stand within <span class="v" data-v="pickupM">15</span> m for <span class="v" data-v="pickupSec">5</span> s (watch the ring; walking away resets it).</li>
+<li>Hold <b>one</b> at a time; tap to use. <span class="v" data-v="cooldownMin">3</span>-min cooldown between uses. Not usable in sudden death.</li>
+<li><b>Stealing:</b> a hider can destroy a hunter drop the same way — but the spot flashes for everyone and that hider is instantly pinged to the hunters at their real location.</li>
+<li>Everyone sees a toast when one is used: "A hider used Jammer!" (hiders stay anonymous) or "Hunter Murray used Sonar!".</li></ul>
+<table id="puHider"><tr><th>Hider power-up</th><th>What it does</th></tr>
+<tr><td>📡 Hunter Radar</td><td>See every hunter live for 30 s.</td></tr>
+<tr><td>📵 Jammer</td><td>Hunters' maps blur and their compass spins for 60 s (pings still happen).</td></tr>
+<tr><td>🤫 Silent Shoes</td><td>You never chime again this round (Sonar can't find you either).</td></tr>
+<tr><td>🛡️ Shield <span class="rare">~15%</span></td><td>Activate with no hunter within 20 m. Blocks the next catch once ("Shield blocked!"). Lasts until used or 5 min.</td></tr>
+<tr><td>⏩ Extra Time <span class="rare">rare ~10%</span></td><td>Takes 2 min off the clock for everyone (never cuts into sudden death).</td></tr>
+<tr><td>💖 Revive <span class="rare">rare ~10%</span></td><td>Frees the earliest-caught hider (an infected hunter turns back into a hider).</td></tr></table>
+<table id="puHunter"><tr><th>Hunter power-up</th><th>What it does</th></tr>
+<tr><td>🔊 Sonar</td><td>Every hider within 75 m chimes; all hiders are told who used it.</td></tr>
+<tr><td>🔍 Truth Ping</td><td>The next ping ignores decoys and bounty wipes.</td></tr>
+<tr><td>🎯 Shrink Zone</td><td>The field shrinks 30% for 3 min (30 s grace to get back in).</td></tr>
+<tr><td>📷 Cam Peek+</td><td>A fresh photo from every hider who allowed the camera.</td></tr>
+<tr><td>🔥 Heat Trail</td><td>For 30 s, see each hider's trail over the last 2 min.</td></tr>
+<tr><td>🐕 Bloodhound</td><td>For 60 s, see each hider's distance in metres (no direction).</td></tr></table>
+<p class="tip" id="oddsNote">Hunter power-ups are equally likely. Hider odds: Radar, Jammer and Silent Shoes ~22% each.</p></details>
+
+<details id="record"><summary>⏺ Recording &amp; the radar bubble</summary>
+<p>Tap ⏺ <b>Record</b> to film your game. Clips stay <b>on your phone</b> and are never uploaded (unless you choose to send highlights to the host after the game). While recording, the camera fills the screen and the map shrinks into a round <b>radar bubble</b> — tap it to swap camera/map, drag it to any corner.</p>
+<p>⚙ Quality: Saver (480p), Standard (720p, default) or High (1080p). Long recordings are saved in 3-min parts.</p></details>
+
+<details id="recap"><summary>🏁 Recap &amp; trophies</summary>
+<p>After the game, everyone sees an animated replay of all paths (trails are never shown during play), a heat map, a timeline, awards and trophies, and can share a recap image. A <b>close call</b> is a hunter within <span class="v" data-v="closeCallM">20</span> m of a hider who then survived <span class="v" data-v="closeCallSec">60</span> s.</p>
+<p><b>Awards:</b> Longest survivor, Closest call, Most distance walked, Decoy master, Bounty hunter, Fastest catch, Most out of bounds.</p>
+<p><b>Trophies:</b> <span id="trophyList">👻 Ghost · 🐕 Bloodhound · 🪒 Close Shave · 🎭 Decoy Master · 💰 Bounty Hunter · 🏃 Marathoner · 🪄 Escape Artist · 🩸 First Blood · 🧟 Zombie · 🚧 Rule Bender · 🦝 Thief · ⚡ Power Player</span></p></details>
+
+<details id="reels"><summary>🎬 Highlight reels &amp; Make it viral</summary>
+<p>If you recorded, your phone automatically builds a highlight reel from your own clips (catches, close calls, decoys, bounties, the final seconds) with captions and a trophy card. Keep the page open while it builds (takes about as long as the reel).</p>
+<p>Optionally tap <i>Send my highlights to host</i> to share only your short cuts (max <span class="v" data-v="hlMaxMB">15</span> MB, deleted after <span class="v" data-v="hlTtlMin">30</span> min) so the host can make a group reel. <b>🔥 Make it viral</b> makes a vertical 15–30 s clip with big captions and a share link.</p></details>
+
+<details id="safety" open><summary>⚠️ Safety rules</summary><div class="warn"><ul>
+<li>You must be <b>18+</b> to play.</li>
+<li>Play only in <b>public places</b>. Never trespass onto private property, yards or closed areas.</li>
+<li><b>Watch for traffic.</b> Don't play near busy roads, and never look at your phone while crossing.</li>
+<li><b>Get permission</b> from anyone you record. Recording private conversations without consent can be illegal (e.g. California).</li>
+<li>Be respectful — keep the chime volume low, especially at night.</li></ul></div>
+<p class="note"><a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p></details>
+<p><a class="back" href="/" target="_top">← Back to Last Ping</a></p>
+</main>
+<script>
+// fill exact values from the live game config (same constants the server uses)
+fetch('/api/rules').then(r => r.json()).then(c => {
+  for (const el of document.querySelectorAll('[data-v]')) if (c[el.dataset.v] != null) el.textContent = c[el.dataset.v];
+  const w = c.hiderWeights, tot = Object.values(w).reduce((a, b) => a + b, 0), pct = k => Math.round(w[k] / tot * 100) + '%';
+  document.getElementById('oddsNote').textContent = 'Hider odds: ' + Object.keys(w).map(k => `${c.info[k][0]} ${c.info[k][1]} ${pct(k)}`).join(' · ') + '. Hunter power-ups are equally likely.';
+  if (window.Recap) {}
+}).catch(() => {});
+if (window.top !== window) for (const a of document.querySelectorAll('a.back')) a.addEventListener('click', e => { e.preventDefault(); parent.postMessage('scram:closeRules', location.origin); });
+if (location.hash) { const d = document.querySelector(location.hash); if (d && d.tagName === 'DETAILS') d.open = true; }
+for (const a of document.querySelectorAll('nav.toc a')) a.addEventListener('click', () => { const d = document.querySelector(a.getAttribute('href')); if (d) d.open = true; });
+</script><script>if (window.top !== window) for (const a of document.querySelectorAll('a.back')) a.addEventListener('click', e => { e.preventDefault(); parent.postMessage('scram:closeRules', location.origin); });</script>
+</body></html>

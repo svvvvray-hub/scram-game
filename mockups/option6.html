@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="common.css"><script src="vendor/leaflet.js"></script><script src="common.js"></script><title>6 Sheet</title><style>
+.sheet{position:absolute;z-index:2050;left:0;right:0;bottom:0;height:30dvh;background:#0b1220;border-radius:18px 18px 0 0;overflow:hidden;box-shadow:0 -6px 20px #000a;transition:height .2s;touch-action:none}
+.sheet .cam{top:22px;border-radius:12px;margin:0 8px 8px}.grab{height:22px;display:flex;justify-content:center;align-items:center}.grab i{width:44px;height:5px;border-radius:3px;background:#6b7280}
+.sheet .recbar{left:16px;top:32px}.decoy{bottom:calc(30dvh + 12px)}.lbl{bottom:calc(30dvh + 76px)}
+</style></head><body><div class="mapbox" id="m"></div><div class="sheet" id="sh"><div class="grab"><i></i></div><div class="cam"></div></div>
+<script>const map=mkMap('m');hud();decoy();label('Option 6 · Map + camera bottom sheet');
+document.querySelector('.recbar')||sh.insertAdjacentHTML('beforeend','<div class="recbar"><span class="recDot"></span><b>REC</b><span style="color:#fff">01:23</span><button>🔄 Flip</button><button class="danger">■ Stop</button></div>');
+const d=document.querySelector('.decoy'),l=document.querySelector('.lbl');let y0,h0;
+sh.addEventListener('pointerdown',e=>{y0=e.clientY;h0=sh.offsetHeight;sh.style.transition='none';sh.setPointerCapture(e.pointerId)});
+sh.addEventListener('pointermove',e=>{if(y0==null)return;const h=Math.min(innerHeight-60,Math.max(120,h0+y0-e.clientY));sh.style.height=h+'px';d.style.bottom=h+12+'px';l.style.bottom=h+76+'px'});
+sh.addEventListener('pointerup',e=>{y0=null;sh.style.transition='';const full=sh.offsetHeight>innerHeight*.5;const h=full?innerHeight-60:innerHeight*.3;sh.style.height=h+'px';d.style.bottom=h+12+'px';l.style.bottom=h+76+'px';d.style.display=full?'none':''})</script></body></html>

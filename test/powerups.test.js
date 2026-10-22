@@ -166,7 +166,7 @@ test('hunter power-ups: Sonar, Truth Ping, Shrink Zone, Cam Peek+, Heat Trail, B
   await until(() => s1.got('chime').some(m => m.sonar)); await sleep(80);
   assert.ok(!s2.got('chime').some(m => m.sonar), 'Silent Shoes blocks Sonar'); assert.ok(!s3.got('chime').some(m => m.sonar), 'beyond 75 m');
   for (const c of [s1, s2, s3]) assert.ok(c.got('sonar').some(m => m.by === 'P0'), 'all hiders told who used Sonar');
-  assert.ok(s3.got('powerUsed').some(m => m.who === 'P0' && m.label === 'Sonar'));
+  assert.ok(s3.got('powerUsed').some(m => m.who === 'Hunter P0' && m.label === 'Sonar'), 'hunter toasts are named: Hunter P0 used Sonar');
   // Truth ping: decoy stays armed, ping is real
   s1.send({ type: 'decoy' }); await until(() => P(a, s1).decoyArmed); await use('truth');
   const n0 = h.pings.length; await until(() => h.pings.length > n0 && !h.pings.at(-1).out);

@@ -65,6 +65,12 @@ function createApp(opts = {}) {
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
   app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
   app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+  app.get('/rules', (req, res) => res.sendFile(path.join(__dirname, 'public', 'rules.html')));
+  // exact rule values for /rules (rendered from the same constants the game uses)
+  app.get('/api/rules', (req, res) => res.json({ gameMin: DEFAULT_GAME_SEC / 60, pingSec: 60, hideSec: 120, oobGraceSec: 30, catchConfirmSec: 20, catchRadiusM: 30,
+    decoys: 2, decoyMinM: 30, decoyMaxM: 150, chimeM: 40, chimeVolDefault: 25, bountyEveryMin: 5, bountyRadiusM: 15, camMin: 10, compassFromMin: 18,
+    dropEveryMin: 3, chaosEverySec: 90, noDropsFirstMin: 2, dropTtlMin: 2.5, pickupM: 15, pickupSec: 5, cooldownMin: 3, dropMinM: 50, dropMaxM: 200,
+    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60 }));
   app.get('/healthz', (req, res) => res.json({ ok: true, lobbies: lobbies.size }));
   app.get('/j/:code', (req, res) => res.redirect('/?code=' + encodeURIComponent(req.params.code.toUpperCase())));
   app.get('/qr/:code.svg', async (req, res) => {
@@ -469,7 +475,7 @@ function createApp(opts = {}) {
       case 'hound': me.houndUntil = t + fxDur(L, 60); L.nextHoundAt = 0; break;
     }
     me.held = null; me.lastUse = t; me.used++;
-    const [icon, label] = PU.INFO[type], who = hiderSide ? 'A hider' : me.name;
+    const [icon, label] = PU.INFO[type], who = hiderSide ? 'A hider' : `Hunter ${me.name}`;
     logEv(L, 'power', { id: me.id, ptype: type, side: hiderSide ? 'hider' : 'hunter' }, `${icon} ${me.name} used ${label}${note}`);
     event(L, `${icon} ${who} used ${label}!${note}`);
     for (const p of L.players.values()) send(p.ws, { type: 'powerUsed', ptype: type, side: hiderSide ? 'hider' : 'hunter', who, icon, label, note, mine: p === me });

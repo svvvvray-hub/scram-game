@@ -215,5 +215,8 @@ test('server rejects create/join without the 18+/Terms consent flag', async () =
   assert.equal(j.msgs[0].type, 'error'); assert.equal([...a.lobbies.values()][0].players.size, 1);
   const r = await new Promise(res => require('http').get(`http://127.0.0.1:${a.server.address().port}/terms`, x => { let b = ''; x.on('data', d => b += d); x.on('end', () => res({ s: x.statusCode, b })); }));
   assert.equal(r.s, 200); assert.match(r.b, /Last Ping/);
+  const g = p => new Promise(res => require('http').get(`http://127.0.0.1:${a.server.address().port}${p}`, x => { let b = ''; x.on('data', d => b += d); x.on('end', () => res({ s: x.statusCode, b })); }));
+  const ru = await g('/rules'); assert.equal(ru.s, 200); assert.match(ru.b, /How to play/);
+  const cfg = JSON.parse((await g('/api/rules')).b); assert.equal(cfg.pingSec, 60); assert.equal(cfg.pickupSec, 5); assert.equal(cfg.hiderWeights.extraTime, 10);
   done(a, [c, j]);
 });

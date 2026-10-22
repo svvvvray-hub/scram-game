@@ -274,3 +274,8 @@ Tests: `test/powerups.test.js` (spawn timing/distances/field, visibility, 5 s pi
 steal-and-ping, every effect, weight distribution, Off/Chaos, chime volume, chime preview throttle/broadcast/tally).
 E2E `test/e2e_powerups.js` needs a server started with `SCRAM_TEST_PU=hider:radar,hunter:sonar` (a test-only hook
 that forces drop types): `PORT=3001 SCRAM_TEST_PU=hider:radar,hunter:sonar node server.js` then `node test/e2e_powerups.js`.
+
+## v7 — named hunter power-ups + How to play
+- Hunter power-up toasts name the hunter: "Hunter Murray used Sonar!" (the Sonar alert to hiders too). Hider toasts stay anonymous: "A hider used Jammer!".
+- `public/rules.html` (also at `/rules`): a dark, phone-friendly rules page with a sticky table of contents and collapsible sections. Its numbers come live from `/api/rules`, which reads the game constants, so the page can't drift from the code.
+- A "📖 How to play" button on the join screen and in the lobby opens the rules in an in-app iframe sheet. The WebSocket stays connected, and "← Back" inside the sheet just closes it.

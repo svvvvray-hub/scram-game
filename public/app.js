@@ -53,7 +53,7 @@ function handle(m) {
   else if (m.type === 'puGot') { const [i, l] = PU_INFO[m.ptype] || ['🎁', m.ptype]; toast(`${i} Got ${l}! Tap to use it.`, 4000); navigator.vibrate?.(150); }
   else if (m.type === 'puNote') toast(m.text, 4000);
   else if (m.type === 'powerUsed') toast(m.mine ? `${m.icon} You used ${m.label}!${m.note || ''}` : `${m.icon} ${m.who} used ${m.label}!${m.note || ''}`, 4000);
-  else if (m.type === 'sonar') { const e = $('sonarAlert'); e.textContent = `🔊 A hunter used Sonar! (${m.by})`; e.classList.remove('hidden'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.add('hidden'), 4000); toast(`🔊 ${m.by} used Sonar!`, 4000); navigator.vibrate?.([300, 100, 300]); }
+  else if (m.type === 'sonar') { const e = $('sonarAlert'); e.textContent = `🔊 Hunter ${m.by} used Sonar!`; e.classList.remove('hidden'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.add('hidden'), 4000); toast(`🔊 Hunter ${m.by} used Sonar!`, 4000); navigator.vibrate?.([300, 100, 300]); }
   else if (m.type === 'revived') toast('💖 You were revived — you are a hider again! Run!', 6000);
   else if (m.type === 'shieldBlocked') toast(`🛡️ Shield blocked! ${m.hider} can't be caught this time`, 5000);
   else if (m.type === 'dropFlash') { flashSpot(m); toast(`🦝 A hider destroyed a hunter drop${me()?.role === 'hunter' ? ` — ${m.name} was pinged!` : ''}`, 5000); }
@@ -245,6 +245,10 @@ function go(type) {
   startGps(); wake(); unlockAudio();
   if (ws?.readyState === 1) sendMsg(msg); else pendingAction = msg;
 }
+// rules in an in-app iframe sheet: the lobby and its WebSocket stay put
+for (const b of document.querySelectorAll('[data-rules]')) b.onclick = () => { if (!$('rulesFrame').src) $('rulesFrame').src = '/rules'; $('rulesSheet').classList.remove('hidden'); };
+$('rulesClose').onclick = () => $('rulesSheet').classList.add('hidden');
+addEventListener('message', e => { if (e.origin === location.origin && e.data === 'scram:closeRules') $('rulesSheet').classList.add('hidden'); });
 $('btnCreate').onclick = () => go('create'); $('btnJoin').onclick = () => go('join');
 
 // ---------- lobby ----------

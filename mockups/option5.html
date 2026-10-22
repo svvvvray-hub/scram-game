@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="common.css"><script src="vendor/leaflet.js"></script><script src="common.js"></script><title>5 Toggle</title><style>
+.pane{position:absolute;inset:0;transition:all .25s}.thumb{inset:auto;right:12px;top:150px;width:30%;aspect-ratio:3/4;z-index:2050;border-radius:14px;overflow:hidden;border:2px solid #fff;box-shadow:0 6px 20px #000a}
+.thumb>*{pointer-events:none}.seg{flex-wrap:nowrap!important;flex-direction:row!important;width:auto!important;gap:4px;position:absolute;z-index:2100;left:50%;transform:translateX(-50%);bottom:84px;display:flex;background:#000c;border-radius:99px;padding:4px}
+.seg button{display:inline-block;width:auto;margin:0;flex:none;white-space:nowrap;padding:8px 16px;border-radius:99px;background:none!important}.seg button.on{background:#2563eb!important}.lbl{bottom:136px}
+</style></head><body><div class="pane" id="pc"><div class="cam"></div></div><div class="pane thumb" id="pm"><div class="mapbox" id="m"></div></div>
+<div class="seg" style="display:flex;flex-direction:row"><button id="bc" class="on">📷 Camera</button><button id="bm">🗺️ Map</button></div>
+<script>const map=mkMap('m');hud();rec('left:12px;top:76px');decoy();label('Option 5 · Tap/swipe camera ⇄ map');
+function show(cam){pc.classList.toggle('thumb',!cam);pm.classList.toggle('thumb',cam);bc.classList.toggle('on',cam);bm.classList.toggle('on',!cam);setTimeout(()=>map.invalidateSize(),260)}
+bc.onclick=()=>show(true);bm.onclick=()=>show(false);pc.onclick=()=>pc.classList.contains('thumb')&&show(true);pm.onclick=()=>pm.classList.contains('thumb')&&show(false);
+let x0;document.addEventListener('touchstart',e=>x0=e.touches[0].clientX);document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>80)show(dx>0)})</script></body></html>

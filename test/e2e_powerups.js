@@ -28,6 +28,18 @@ const T0 = Date.now();
   const code = (await murray.page.textContent('#lobbyCode')).trim();
   for (const p of [ana, bob]) { await p.page.fill('#code', code); await p.page.check('#agree'); await p.page.click('#btnJoin'); await p.page.waitForSelector('#lobbyCode:not(:empty)'); }
   await murray.page.waitForFunction(() => S.players.length === 3 && S.players.every(p => p.perm === 'granted'), null, { timeout: 20000 });
+  // How to play: in-app sheet, player stays in the lobby with the socket open
+  const sentBefore = murray.frames.length;
+  await ana.page.click('#lobby [data-rules]'); await ana.page.waitForSelector('#rulesSheet:not(.hidden)');
+  const rf = ana.page.frameLocator('#rulesFrame'); await rf.locator('h1').waitFor();
+  check(/How to play/.test(await rf.locator('h1').textContent()) && await rf.locator('nav.toc a').count() >= 10, 'rules open in an in-app sheet with a table of contents');
+  await rf.locator('nav.toc a[href="#power"]').click(); await sleep(600);
+  check(/Hunter Radar/.test(await rf.locator('#power').textContent()) && await rf.locator('#power').evaluate(d => d.open), 'collapsible power-up section opens from the TOC');
+  check(await rf.locator('[data-v="pingSec"]').textContent() === '60' && /Extra Time 10%/.test(await rf.locator('#oddsNote').textContent()), 'values rendered from the game config');
+  await ana.page.screenshot({ path: 'shots/rules.png' });
+  check(await ana.page.evaluate(() => S.state === 'lobby' && ws.readyState === 1 && !document.getElementById('lobby').classList.contains('hidden')), 'player stays in the lobby, WebSocket open');
+  await rf.locator('a.back').first().click(); await ana.page.waitForSelector('#rulesSheet.hidden', { state: 'attached' });
+  check(ana.page.url().includes('code='), '← Back closes the sheet without leaving the lobby');
   // sound check
   await murray.page.click('#btnSound'); check(await murray.page.isVisible('#soundAsk'), 'sound check asks "Did you hear it?"');
   check(await murray.page.evaluate(() => Math.abs(window.lastChime.gain - 0.25) < 1e-9), 'chime gain defaults to 0.25 (25 %)');
@@ -71,7 +83,7 @@ const T0 = Date.now();
   await murray.page.waitForFunction(() => S.pu && S.pu.held === 'sonar', null, { timeout: 8000 }); check(true, 'Murray picked up Sonar');
   await murray.page.click('#btnPower');
   for (const p of [ana, bob]) await p.page.waitForFunction(() => !document.getElementById('sonarAlert').classList.contains('hidden') && /Sonar/.test(document.getElementById('sonarAlert').textContent), null, { timeout: 5000 });
-  check(/Murray/.test(await bob.page.textContent('#sonarAlert')), 'all hiders alerted with the hunter name: ' + await bob.page.textContent('#sonarAlert'));
+  check(/Hunter Murray used Sonar!/.test(await bob.page.textContent('#sonarAlert')), 'all hiders alerted with the hunter name: ' + await bob.page.textContent('#sonarAlert'));
   check(ana.frames.some(f => f.type === 'chime' && f.sonar), 'Ana (within 75 m) was forced to chime');
   await sleep(1000); await ana.page.screenshot({ path: 'shots/sonar_alert.png' });
   // 3) steal: Bob destroys the next hunter drop -> flash + Murray gets Bob's real location
