@@ -50,7 +50,7 @@ test('roles default: host hunter, joiners hiders; lobby shows GPS status but no 
 });
 
 test('ping timing, privacy during head start and between pings, hiders win on timeout', async () => {
-  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 1.2, pingSec: 0.4, hideSec: 0.3 });
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 1.2, pingSec: 0.4, hideSec: 0.3, teammates: false });
   const t0 = Date.now(); host.send({ type: 'start' });
   await until(() => host.state.state === 'hiding');
   await sleep(250);
@@ -448,7 +448,7 @@ test('bounties always spawn inside the field (circle, polygon, intersection, pla
 test('out of bounds: warning state for the player, hider auto-revealed (true spot, decoy ignored) on next ping after grace', async () => {
   const a = createApp({ tickMs: 20, minSec: 0.1, oobMinMs: 300 });
   await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
-  const { host, hs } = await setup(a, { gameSec: 4, pingSec: 0.8, hideSec: 0 });
+  const { host, hs } = await setup(a, { gameSec: 4, pingSec: 0.8, hideSec: 0, teammates: false });
   const IN = off(C0, 100, 0), OUT = off(C0, 700, 0);
   host.send({ type: 'loc', ...C0, acc: 5 }); hs.forEach(h => h.send({ type: 'loc', ...IN, acc: 5 }));
   host.send({ type: 'field', field: { circle: { ...C0, r: 402 } } }); await until(() => host.state.field);
@@ -474,4 +474,67 @@ test('no boundary (default): nobody is ever out of bounds', async () => {
   host.send({ type: 'start' }); await until(() => host.state.state === 'playing'); await sleep(200);
   assert.ok(host.state.players.every(p => !p.out) && !host.msgs.some(m => m.type === 'startBlocked'));
   a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('teammates: uncaught hiders see each other live, hunters NEVER get hider teammate positions; role switch on infection', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 60, pingSec: 30, hideSec: 0, caughtBecomeHunter: true });
+  const h2 = client(a.url, 'Hider2'); await h2.open; h2.send({ type: 'join', agreed: true, code, name: 'Hider2' }); await until(() => h2.joined);
+  const hunter2 = client(a.url, 'H2'); await hunter2.open; hunter2.send({ type: 'join', agreed: true, code, name: 'H2' }); await until(() => hunter2.joined);
+  host.send({ type: 'setRole', id: hunter2.joined.id, role: 'hunter' }); host.send({ type: 'role', id: hunter2.joined.id, role: 'hunter' });
+  await sleep(100);
+  const H2 = hunter2.state.players.find(p => p.id === hunter2.joined.id).role === 'hunter';
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  const hidLoc = lat => s => (s.players.find(p => p.loc && p.loc.lat === lat));
+  hs[0].send({ type: 'loc', lat: 37.444444, lng: -122.1, acc: 5 });
+  await until(() => hs[1].state && hidLoc(37.444444)(hs[1].state) && h2.state && hidLoc(37.444444)(h2.state));
+  assert.equal(hs[1].state.players.find(p => p.id === hs[0].joined.id).loc.lat, 37.444444, 'teammate visible with id/name');
+  if (H2) { hunter2.send({ type: 'loc', lat: 37.777777, lng: -122.2, acc: 5 }); await until(() => hidLoc(37.777777)(host.state)); } // hunters see each other live
+  await sleep(100);
+  for (const c of [host, hunter2]) assert.ok(!c.raw().includes('37.444444'), 'hunter must never receive hider teammate positions');
+  // infection: hs[0] caught -> becomes hunter
+  host.send({ type: 'catch', id: hs[0].joined.id });
+  await until(() => hs[0].state.players.find(p => p.id === hs[0].joined.id).role === 'hunter');
+  const mark = hs[0].msgs.length;
+  hs[1].send({ type: 'loc', lat: 37.666666, lng: -122.1, acc: 5 });
+  await until(() => hidLoc(37.666666)(h2.state));
+  host.send({ type: 'loc', lat: 37.555555, lng: -122.5, acc: 5 });
+  await until(() => hidLoc(37.555555)(hs[0].state)); // now sees hunters live
+  assert.ok(!hs[0].msgs.slice(mark).some(m => JSON.stringify(m).includes('37.666666')), 'infected player stops receiving hider positions');
+  assert.ok(!host.raw().includes('37.666666'));
+  hs[0].send({ type: 'loc', lat: 37.888888, lng: -122.1, acc: 5 }); await sleep(150);
+  assert.ok(!hidLoc(37.888888)(hs[1].state) && !hidLoc(37.888888)(h2.state), 'hiders stop seeing the infected player');
+  a.server.close(); [host, ...hs, h2, hunter2].forEach(c => c.ws.terminate());
+});
+
+test('teammates: caught spectator sees nothing live; toggle off hides teammates', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 60, pingSec: 30, hideSec: 0, caughtBecomeHunter: false, teammates: true });
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  host.send({ type: 'catch', id: hs[0].joined.id });
+  await until(() => hs[0].state.players.find(p => p.id === hs[0].joined.id).caught);
+  const mark = hs[0].msgs.length;
+  hs[1].send({ type: 'loc', lat: 37.343434, lng: -122.1, acc: 5 }); host.send({ type: 'loc', lat: 37.565656, lng: -122.5, acc: 5 }); await sleep(200);
+  const later = hs[0].msgs.slice(mark).map(m => JSON.stringify(m)).join();
+  assert.ok(!later.includes('37.343434') && !later.includes('37.565656'), 'spectator sees nothing live');
+  assert.ok(hs[0].state.players.every(p => p.id === hs[0].joined.id || !p.loc));
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+  const b = await boot(); const s2 = await setup(b, { gameSec: 60, pingSec: 30, hideSec: 0, teammates: false });
+  assert.equal(s2.host.state.settings.teammates, false);
+  s2.host.send({ type: 'start' }); await until(() => s2.host.state.state === 'playing');
+  s2.hs[0].send({ type: 'loc', lat: 37.454545, lng: -122.1, acc: 5 }); await sleep(200);
+  assert.ok(!s2.hs[1].raw().includes('37.454545') && !s2.host.raw().includes('37.454545'));
+  b.server.close(); [s2.host, ...s2.hs].forEach(c => c.ws.terminate());
+});
+
+test('player cap: MAX_PLAYERS per lobby, "Lobby is full (n/n)" on join, exposed in state and /api/rules', async () => {
+  const a = createApp({ tickMs: 20, minSec: 0.1, maxPlayers: 3 }); await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  const { host, hs, code } = await setup(a, { gameSec: 60, pingSec: 30, hideSec: 0 });
+  assert.equal(host.state.maxPlayers, 3);
+  const x = client(a.url, 'X'); await x.open; x.send({ type: 'join', agreed: true, code, name: 'X' }); await until(() => x.msgs.length);
+  assert.equal(x.msgs[0].type, 'error'); assert.equal(x.msgs[0].error, 'Lobby is full (3/3)'); assert.equal(host.state.players.length, 3);
+  const r = await new Promise(res => require('http').get(`http://127.0.0.1:${a.server.address().port}/api/rules`, q => { let b = ''; q.on('data', d => b += d); q.on('end', () => res(JSON.parse(b))); }));
+  assert.equal(r.maxPlayers, 3);
+  a.server.close(); [host, ...hs, x].forEach(c => c.ws.terminate());
+  const e = createApp({ env: { MAX_PLAYERS: '7' } }); await new Promise(r2 => e.server.listen(0, r2));
+  const r2 = await new Promise(res => require('http').get(`http://127.0.0.1:${e.server.address().port}/api/rules`, q => { let b = ''; q.on('data', dd => b += dd); q.on('end', () => res(JSON.parse(b))); }));
+  assert.equal(r2.maxPlayers, 7); e.server.close();
 });

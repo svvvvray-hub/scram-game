@@ -273,13 +273,13 @@ function renderLobby() {
   for (const b of document.querySelectorAll('[data-role]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.role);
     if (p.role === 'hunter' && S.players.filter(x => x.role === 'hunter').length <= 1) return toast('Need at least 1 hunter');
     sendMsg({ type: 'role', id: p.id, role: p.role === 'hunter' ? 'hider' : 'hunter' }); };
-  { const nh = S.players.filter(p => p.role === 'hunter').length; $('roleCounts').textContent = `· 🔦 ${nh} hunter${nh === 1 ? '' : 's'} · 🙈 ${S.players.length - nh} hider${S.players.length - nh === 1 ? '' : 's'}`;
+  { const nh = S.players.filter(p => p.role === 'hunter').length; $('roleCounts').textContent = `· Players ${S.players.length}/${S.maxPlayers || 20} · 🔦 ${nh} hunter${nh === 1 ? '' : 's'} · 🙈 ${S.players.length - nh} hider${S.players.length - nh === 1 ? '' : 's'}`;
     $('sHunters').max = Math.max(1, S.players.length - 1); }
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   set('sGame', +(st.gameSec / 60).toFixed(2)); set('sPing', st.pingSec); set('sHide', st.hideSec);
   set('sPower', st.powerups || 'normal'); set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
   $('sPower').disabled = $('sChimeVol').disabled = S.you !== S.host;
-  $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed;
+  $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed; $('sMates').checked = st.teammates !== false;
   for (const [f, id] of FEAT) $(id).checked = !!st.features?.[f];
   const m = me(), hider = m && m.role === 'hider';
   $('camPanel').classList.toggle('hidden', !(hider && st.features?.cam));
@@ -288,10 +288,10 @@ function renderLobby() {
   $('camStatus').textContent = m?.cam === 'granted' ? '✅ Ready · camera allowed' : m?.cam === 'denied' ? '✅ Ready · no camera (hunters see “photo unavailable”)' : 'Not ready yet';
 }
 const FEAT = [['decoy', 'fDecoy'], ['chime', 'fChime'], ['bounty', 'fBounty'], ['cam', 'fCam'], ['compass', 'fCompass']];
-function pushSettings() { sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked, powerups: $('sPower').value, chimeVol: +$('sChimeVol').value,
+function pushSettings() { sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked, teammates: $('sMates').checked, powerups: $('sPower').value, chimeVol: +$('sChimeVol').value,
   features: Object.fromEntries(FEAT.map(([f, id]) => [f, $(id).checked])) } }); }
 $('sChimeVol').oninput = () => $('chimeVolLbl').textContent = $('sChimeVol').value + '%';
-for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sPower', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
+for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sMates', 'sPower', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
 $('btnQuick').onclick = () => { $('sGame').value = 2; $('sPing').value = 10; $('sHide').value = 10; pushSettings(); toast('2-min test game: pings 10 s, bounty every 30 s, cam at 1:00, compass from 1:48'); };
 $('btnReadyCam').onclick = askCam;
 // host chime preview on every phone (lobby only): on slider release, or at most every 1.5 s while dragging
@@ -411,6 +411,8 @@ function renderGame() {
   if (m.loc) { marker('me', m.loc, '#22c55e', 'You'); pts.push([m.loc.lat, m.loc.lng]); }
   // other hunters live (server only sends these to hunters)
   S.players.filter(p => p.id !== S.you && p.role === 'hunter' && p.loc).forEach(p => { marker('h' + p.id, p.loc, '#f97316', '🔦 ' + esc(p.name)); pts.push([p.loc.lat, p.loc.lng]); });
+  // fellow hiders live (server only sends these to uncaught hiders when 'Teammates visible' is on)
+  if (m.role === 'hider' && !m.caught) S.players.filter(p => p.id !== S.you && p.role === 'hider' && !p.caught && p.loc).forEach(p => { marker('t' + p.id, p.loc, '#a855f7', '🤝 ' + esc(p.name)); pts.push([p.loc.lat, p.loc.lng]); });
   // hiders: last ping only
   const last = S.last || {};
   const hiders = S.players.filter(p => p.role === 'hider' || p.caught);

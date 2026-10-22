@@ -57,6 +57,7 @@ function createApp(opts = {}) {
   // Share links: /play is a controllable 302 (point it at a custom domain with PLAY_REDIRECT_URL); /p/<code> deep-links a lobby.
   // ?ref=<handle> visits are counted in memory and logged.
   const refs = new Map(), env = opts.env || process.env;
+  const MAX_PLAYERS = Math.round(clampNum0(opts.maxPlayers ?? env.MAX_PLAYERS, 2, 500, 20)); // per lobby
   app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = Recap.igHandle(req.query.ref); if (h) { refs.set(h, (refs.get(h) || 0) + 1); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
   const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
     return /^https?:/i.test(base) ? u.toString() : u.pathname + u.search; };
@@ -70,7 +71,7 @@ function createApp(opts = {}) {
   app.get('/api/rules', (req, res) => res.json({ gameMin: DEFAULT_GAME_SEC / 60, pingSec: 60, hideSec: 120, oobGraceSec: 30, catchConfirmSec: 20, catchRadiusM: 30,
     decoys: 2, decoyMinM: 30, decoyMaxM: 150, chimeM: 40, chimeVolDefault: 25, bountyEveryMin: 5, bountyRadiusM: 15, camMin: 10, compassFromMin: 18,
     dropEveryMin: 3, chaosEverySec: 90, noDropsFirstMin: 2, dropTtlMin: 2.5, pickupM: 15, pickupSec: 5, cooldownMin: 3, dropMinM: 50, dropMaxM: 200,
-    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60 }));
+    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60, maxPlayers: MAX_PLAYERS }));
   app.get('/healthz', (req, res) => res.json({ ok: true, lobbies: lobbies.size }));
   app.get('/j/:code', (req, res) => res.redirect('/?code=' + encodeURIComponent(req.params.code.toUpperCase())));
   app.get('/qr/:code.svg', async (req, res) => {
@@ -87,7 +88,7 @@ function createApp(opts = {}) {
     const code = makeCode(lobbies);
     const L = {
       code, createdAt: now(), hostId: null, players: new Map(), state: 'lobby',
-      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, powerups: 'normal', chimeVol: 25,
+      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, teammates: true, powerups: 'normal', chimeVol: 25,
         features: Object.fromEntries(FEATURES.map(f => [f, true])) },
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
@@ -121,13 +122,14 @@ function createApp(opts = {}) {
       if (p.ig && (L.state === 'lobby' || ended)) o.ig = p.ig; // handles: lobby + recap only, never during a game // in/out flag only, never coords
       const canSeeLive = p.id === me.id ||
         (isHunter(me) && isHunter(p) && L.state !== 'lobby') ||
+        (L.settings.teammates && me.role === 'hider' && !me.caught && p.role === 'hider' && !p.caught && running(L)) || // hider teammates: uncaught hiders only, never hunters/spectators
         (me.role === 'hider' && !me.caught && me.radarUntil > t && isHunter(p) && L.state === 'playing'); // Hunter Radar
       if (canSeeLive && p.loc) o.loc = { lat: p.loc.lat, lng: p.loc.lng, acc: p.loc.acc, ts: p.loc.ts };
       return o;
     });
     const v = { type: 'state', code: L.code, you: me.id, host: L.hostId, state: L.state, settings: L.settings,
       serverNow: t, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, nextPingAt: L.nextPingAt,
-      winner: L.winner, players, pingCount: L.pings.length, events: L.events.slice(-8) };
+      winner: L.winner, maxPlayers: MAX_PLAYERS, players, pingCount: L.pings.length, events: L.events.slice(-8) };
     v.field = curField(L); v.baseField = L.field; v.shrinkUntil = L.shrink ? L.shrink.until : 0; v.oobGraceMs = oobGrace(L);
     if (me.outSince) v.outSince = me.outSince;
     v.round = L.round; v.camAt = L.camAt; v.compassAt = L.compassAt;
@@ -529,6 +531,7 @@ function createApp(opts = {}) {
         else if (m.type === 'join') {
           L = lobbies.get(String(m.code || '').toUpperCase());
           if (!L) return send(ws, { type: 'error', error: 'Lobby not found' });
+          if (L.players.size >= MAX_PLAYERS) { const n = L.players.size; L = null; return send(ws, { type: 'error', error: `Lobby is full (${n}/${MAX_PLAYERS})`, full: true }); }
           me = addPlayer(L, m.name, m.ig);
           if (L.state === 'playing' || L.state === 'hiding') me.role = 'hunter'; // late joiners hunt (can't be fairly hidden)
         } else if (m.type === 'rejoin') {
@@ -558,6 +561,7 @@ function createApp(opts = {}) {
           const permNew = first || me.perm !== 'granted'; me.perm = 'granted';
           if (tryClaim(L, me) || permNew || (L.state === 'lobby' && ofChanged)) broadcast(L);
           else if (isHunter(me) && L.state !== 'lobby') broadcast(L);
+          else if (L.settings.teammates && me.role === 'hider' && !me.caught && running(L)) { for (const p of activeHiders(L)) if (p.ws) send(p.ws, viewFor(L, p)); } // only uncaught hiders get this update
           else send(ws, viewFor(L, me));
           break;
         }
@@ -570,6 +574,7 @@ function createApp(opts = {}) {
           L.settings.hideSec = clampNum(s.hideSec, 0, 3600, L.settings.hideSec);
           if ('caughtBecomeHunter' in s) L.settings.caughtBecomeHunter = !!s.caughtBecomeHunter;
           if ('showRevealed' in s) L.settings.showRevealed = !!s.showRevealed;
+          if ('teammates' in s) L.settings.teammates = !!s.teammates;
           if (['off', 'normal', 'chaos'].includes(s.powerups)) L.settings.powerups = s.powerups;
           if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];
