@@ -1,0 +1,27 @@
+{
+  "name": "scram",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "directories": {
+    "test": "node --test --test-force-exit test/game.test.js"
+  },
+  "scripts": {
+    "test": "node --test --test-force-exit test/game.test.js",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.3.0",
+    "leaflet": "^1.9.4",
+    "qrcode": "^1.5.4",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1",
+    "tunnelmole": "^2.4.0"
+  }
+}

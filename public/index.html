@@ -1,0 +1,87 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827"><title>Scram — GPS hide & seek</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css"></head><body>
+<div id="app">
+<section id="home" class="screen">
+  <h1>🏃 Scram</h1><p class="sub">GPS hide &amp; seek in your browser</p>
+  <label>Your name<input id="name" maxlength="20" autocomplete="nickname" placeholder="e.g. Murray"></label>
+  <button id="btnCreate" class="big primary" disabled>Connecting…</button>
+  <div class="or">or join</div>
+  <label>Join code<input id="code" maxlength="5" autocapitalize="characters" placeholder="ABCDE"></label>
+  <button id="btnJoin" class="big" disabled>Join game</button>
+  <p class="note">No accounts. Locations live only in server memory and are deleted when the lobby ends (max ~1 h).</p>
+</section>
+
+<section id="lobby" class="screen hidden">
+  <div class="codebox"><div>Join code</div><div id="lobbyCode" class="code"></div>
+    <img id="qr" alt="QR code"><div><button id="btnShare" class="small">Share link</button> <span id="joinUrl" class="mono"></span></div></div>
+  <div id="gpsStatus" class="gps"></div>
+  <button id="btnGps" class="big">Enable location</button>
+  <p id="hostName" class="note"></p><h3>Players</h3><ul id="playerList" class="players"></ul>
+  <div id="hostPanel" class="hidden">
+    <h3>Settings</h3>
+    <div class="grid">
+      <label>Game length (min)<input id="sGame" type="number" min="1" step="1"></label>
+      <label>Ping every (sec)<input id="sPing" type="number" min="5" step="5"></label>
+      <label>Head start (sec)<input id="sHide" type="number" min="0" step="10"></label>
+      <label>Hunters (random)<input id="sHunters" type="number" min="1" value="1"></label>
+    </div>
+    <label class="chk"><input id="sBecome" type="checkbox"> Caught hiders become hunters</label>
+    <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
+    <h3>Power-ups</h3>
+    <div id="features">
+      <label class="chk"><input id="fDecoy" type="checkbox"> 👻 Ghost decoy (hiders: 2 fake pings)</label>
+      <label class="chk"><input id="fChime" type="checkbox"> 🔔 Cold-ping chime (hider within 40 m of a hunter)</label>
+      <label class="chk"><input id="fBounty" type="checkbox"> 💰 Bounty hot spot every 5 min</label>
+      <label class="chk"><input id="fCam" type="checkbox"> 📷 Hider cam sneak peek at minute 10</label>
+      <label class="chk"><input id="fCompass" type="checkbox"> 🧭 Sudden-death compass (last 2 min)</label>
+    </div>
+    <button id="btnQuick" class="small">⚡ Quick test: 2-min game (all timings scale)</button>
+    <button id="btnRandom" class="big">🎲 Randomize roles</button>
+    <button id="btnStart" class="big primary">Start game</button>
+  </div>
+ <div id="camPanel" class="hidden camPanel">
+    <b>📷 Hider cam notice</b>
+    <p>At minute 10 hunters will see <b>one photo</b> from your rear camera (no location attached). Keep this page open. If you decline, or the page is in the background, hunters see “photo unavailable”.</p>
+    <button id="btnReadyCam" class="big primary">✅ Ready — allow camera</button>
+    <button id="btnReadyNoCam" class="small">Ready without camera</button>
+    <div id="camStatus" class="note"></div>
+  </div>
+  <p id="waitHost" class="note hidden">Waiting for the host to start…</p>
+  <button id="btnLeaveLobby" class="big danger">Leave lobby</button>
+  <p class="note">⚠️ Keep this page open and the screen on during the game — phones (especially iPhones) pause GPS when the screen locks or the browser is in the background.</p>
+</section>
+
+<section id="game" class="screen hidden full">
+  <div id="hud"><div id="roleBadge"></div><div id="clock"></div><div id="pingClock"></div></div>
+  <div id="banner" class="hidden"></div>
+  <div id="map"></div>
+  <div id="compass" class="hidden"><div class="ring"><div id="arrow">➤</div></div>
+    <div id="compassBand"></div><div id="compassNote" class="note"></div>
+    <button id="btnHeading" class="small hidden">Enable phone compass</button></div>
+  <div id="photoView" class="hidden"><img id="photoBig" alt="hider photo"><div id="photoCap"></div></div>
+  <div id="hideCover" class="hidden"><div>🙈</div><div>Hiders are hiding…</div><div id="hideClock" class="code"></div></div>
+  <div id="bottom">
+    <div id="warn" class="warn hidden"></div>
+    <div id="hunterPanel" class="hidden"><div id="chimeNote" class="chimeNote hidden"></div><div id="camStrip" class="camStrip"></div><div id="hiderBtns"></div></div>
+    <div id="hiderPanel" class="hidden"><div id="revealed" class="note"></div><div id="hiderFx" class="note"></div>
+      <button id="btnDecoy" class="big decoy">👻 Ghost decoy <span id="decoyCount"></span></button>
+      <button id="btnCaughtSelf" class="big danger">I got caught</button></div>
+    <button id="btnEnd" class="small hidden">End game (host)</button> <button id="btnLeaveGame" class="small">Leave</button>
+    <p class="note">Keep the screen on &amp; this tab open — browsers may pause GPS when the screen is off.</p>
+  </div>
+</section>
+
+<section id="end" class="screen hidden">
+  <h1 id="winner"></h1><div id="summary"></div><div id="endMap"></div>
+  <p id="rematchNote" class="note hidden"></p>
+  <button id="btnHome" class="big primary">🔁 Play again (same lobby)</button>
+  <button id="btnLeaveEnd" class="big danger">Leave lobby</button>
+  <p class="note">Trails stay only until the next round starts. The lobby is deleted when everyone leaves or after 1 h without a game.</p>
+</section>
+</div>
+<div id="toast" class="hidden"></div>
+<script src="vendor/leaflet.js"></script>
+<script src="app.js"></script></body></html>

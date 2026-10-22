@@ -1,0 +1,5 @@
+node_modules/
+logs/
+PUBLIC_URL.txt
+run.log
+shots/

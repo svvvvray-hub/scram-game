@@ -1,0 +1,359 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const WebSocket = require('ws');
+const { createApp } = require('../server');
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function boot() {
+  const a = createApp({ tickMs: 20, minSec: 0.1 });
+  await new Promise(r => a.server.listen(0, r));
+  a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  return a;
+}
+function client(url, name) {
+  const ws = new WebSocket(url);
+  const c = { ws, name, msgs: [], state: null, pings: [] };
+  ws.on('message', d => { const m = JSON.parse(d); c.msgs.push(m); if (m.type === 'state') c.state = m; if (m.type === 'joined') c.joined = m; if (m.type === 'ping') c.pings.push(m); });
+  c.send = m => ws.send(JSON.stringify(m));
+  c.open = new Promise(r => ws.on('open', r));
+  c.raw = () => c.msgs.map(m => JSON.stringify(m)).join('\n');
+  return c;
+}
+const until = async (fn, ms = 3000) => { const t = Date.now(); while (!fn()) { if (Date.now() - t > ms) throw new Error('timeout'); await sleep(10); } };
+// Fake GPS coordinates with a unique marker so leaks are easy to grep.
+const HIDER_LAT = [37.111111, 37.222222];
+
+async function setup(a, settings) {
+  const host = client(a.url, 'Hunter'); await host.open; host.send({ type: 'create', name: 'Hunter' }); await until(() => host.joined);
+  const code = host.joined.code;
+  const hs = [0, 1].map(i => client(a.url, 'Hider' + i));
+  for (const h of hs) { await h.open; h.send({ type: 'join', code, name: h.name }); await until(() => h.joined); }
+  await until(() => host.state && host.state.players.length === 3);
+  host.send({ type: 'loc', lat: 37.5, lng: -122.5, acc: 5 });
+  hs.forEach((h, i) => h.send({ type: 'loc', lat: HIDER_LAT[i], lng: -122.1, acc: 8 }));
+  host.send({ type: 'settings', settings });
+  await until(() => host.state.settings.pingSec === settings.pingSec);
+  return { host, hs, code };
+}
+
+test('roles default: host hunter, joiners hiders; lobby shows GPS status but no coords', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 2, pingSec: 0.3, hideSec: 0 });
+  await sleep(100);
+  const ps = host.state.players;
+  assert.equal(ps.find(p => p.id === host.joined.id).role, 'hunter');
+  assert.ok(ps.filter(p => p.role === 'hider').length === 2);
+  assert.ok(ps.every(p => p.perm === 'granted' && p.acc != null));
+  assert.ok(!host.raw().includes('37.111111') && !host.raw().includes('37.222222'));
+  assert.ok(!hs[0].raw().includes('37.222222'), 'hider must not see other hider');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('ping timing, privacy during head start and between pings, hiders win on timeout', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 1.2, pingSec: 0.4, hideSec: 0.3 });
+  const t0 = Date.now(); host.send({ type: 'start' });
+  await until(() => host.state.state === 'hiding');
+  await sleep(250);
+  assert.equal(host.pings.length, 0); assert.ok(!host.raw().includes('37.111111'), 'no leak during head start');
+  // move hider 0 between pings: new coords must not reach hunter until next ping
+  await until(() => host.pings.length >= 1, 2000);
+  const firstAt = Date.now() - t0;
+  assert.ok(firstAt >= 650 && firstAt < 1000, 'first ping at hide+ping ≈700ms, got ' + firstAt);
+  assert.equal(host.pings[0].locs[hs[0].joined.id].lat, 37.111111);
+  hs[0].send({ type: 'loc', lat: 37.333333, lng: -122.1, acc: 8 });
+  await sleep(150);
+  assert.ok(!host.raw().includes('37.333333'), 'moved location must not leak before next ping');
+  await until(() => host.pings.length >= 2, 2000);
+  assert.equal(host.pings[1].locs[hs[0].joined.id].lat, 37.333333);
+  const gap = host.pings[1].t - host.pings[0].t; assert.ok(gap >= 380 && gap < 480, 'gap ' + gap);
+  // hiders receive ping notices without coordinates
+  assert.ok(hs[0].pings.length >= 2 && hs[0].pings.every(p => !p.locs));
+  assert.ok(!hs[0].raw().includes('37.222222') && !hs[1].raw().includes('37.333333'));
+  assert.ok(hs[0].state.revealedAt > 0);
+  await until(() => host.state.state === 'ended', 3000);
+  assert.equal(host.state.winner, 'hiders');
+  assert.ok(hs[0].state.pings.length >= 3, 'end summary includes trails for everyone');
+  assert.ok(!hs[0].raw().includes('"last"'), 'hiders never get last-ping data');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('catching: hunter catch + self-report, caught becomes hunter, all caught ends game', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 0.2, hideSec: 0, caughtBecomeHunter: true });
+  host.send({ type: 'start' }); await until(() => host.pings.length >= 1);
+  hs[1].send({ type: 'catch', id: hs[0].joined.id }); // hider cannot catch
+  await sleep(80); assert.ok(!host.state.players.find(p => p.id === hs[0].joined.id).caught);
+  host.send({ type: 'catch', id: hs[0].joined.id });
+  await until(() => hs[0].state.players.find(p => p.id === hs[0].joined.id).caught);
+  assert.equal(hs[0].state.players.find(p => p.id === hs[0].joined.id).role, 'hunter');
+  await until(() => hs[0].state.last && Object.keys(hs[0].state.last).length > 0); // converted hunter gets ping data
+  hs[1].send({ type: 'caughtSelf' });
+  await until(() => host.state.state === 'ended');
+  assert.equal(host.state.winner, 'hunters');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('reconnect with token restores same player & role; non-host cannot start', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 30, pingSec: 5, hideSec: 0 });
+  hs[0].send({ type: 'start' }); await sleep(80); assert.equal(host.state.state, 'lobby');
+  const { id, token } = hs[0].joined; hs[0].ws.terminate();
+  await until(() => !host.state.players.find(p => p.id === id).connected);
+  const back = client(a.url, 'again'); await back.open; back.send({ type: 'rejoin', code, token });
+  await until(() => back.state);
+  assert.equal(back.state.you, id); assert.equal(host.state.players.length, 3);
+  assert.ok(host.state.players.find(p => p.id === id).connected);
+  const bad = client(a.url, 'x'); await bad.open; bad.send({ type: 'rejoin', code, token: 'nope' });
+  await until(() => bad.msgs.length); assert.equal(bad.msgs[0].type, 'error');
+  a.server.close(); [host, hs[1], back, bad].forEach(c => c.ws.terminate());
+});
+
+test('ended lobby kept while players remain; deleted after 1 h idle (memory only)', async () => {
+  let fake = Date.now();
+  const a = createApp({ tickMs: 20, minSec: 0.1, now: () => fake });
+  await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  const { host, hs } = await setup(a, { gameSec: 30, pingSec: 5, hideSec: 0 });
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  host.send({ type: 'end' }); await until(() => host.state.state === 'ended');
+  assert.equal(a.lobbies.size, 1);
+  await sleep(100); fake += 11 * 60 * 1000; await sleep(100); assert.equal(a.lobbies.size, 1, 'kept while players remain'); fake += 50 * 60 * 1000; await until(() => a.lobbies.size === 0);
+  await until(() => host.msgs.some(m => m.type === 'gone'));
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('3 consecutive rounds via rematch: same code/players, roles restored, no stale pings/timers', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 0.9, pingSec: 0.3, hideSec: 0, caughtBecomeHunter: true });
+  const ids = [host, ...hs].map(c => c.joined.id).sort();
+  for (let round = 1; round <= 3; round++) {
+    host.pings.length = 0;
+    const t0 = Date.now(); host.send({ type: 'start' });
+    await until(() => host.state.state === 'playing' && host.state.round === round);
+    assert.ok(!host.state.last || Object.keys(host.state.last).length === 0, 'no old ping state at round start');
+    if (round === 2) for (const c of [host, ...hs]) if (host.state.players.find(p => p.id === c.joined.id).role === 'hider') c.send({ type: 'caughtSelf' });
+    await until(() => host.state.state === 'ended', 3000);
+    assert.equal(host.state.winner, round === 2 ? 'hunters' : 'hiders');
+    if (round !== 2) {
+      const n = host.pings.length; assert.ok(n >= 3 && n <= 4, `round ${round}: ${n} pings in 0.9 s @0.3 s (no duplicates)`);
+      const ts = host.state.pings.map(p => p.t); assert.ok(ts.every(t => t >= t0), 'summary only has this round\'s pings');
+    }
+    const ping0 = host.pings.length; await sleep(400); assert.equal(host.pings.length, ping0, 'no pings after end (stale timer)');
+    hs[1].send({ type: 'rematch' }); // a non-host can bring everyone back to the waiting room
+    await until(() => host.state.state === 'lobby');
+    const s = host.state;
+    assert.equal(s.code, code); assert.deepEqual(s.players.map(p => p.id).sort(), ids);
+    assert.ok(s.players.every(p => !p.caught)); assert.equal(s.pingCount, 0); assert.ok(!s.pings && !s.last);
+    assert.equal(s.players.filter(p => p.role === 'hunter').length, 1, 'pre-game roles restored');
+    assert.deepEqual(s.settings.pingSec, 0.3);
+    host.send({ type: 'randomize', hunters: 1 }); await sleep(50);
+    assert.equal(host.state.players.filter(p => p.role === 'hunter').length, 1);
+  }
+  assert.equal(a.lobbies.size, 1);
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('leave: removed for everyone, host transfers, can rejoin as new, last leaver deletes lobby', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 30, pingSec: 5, hideSec: 0 });
+  const tok = hs[0].joined.token, id0 = hs[0].joined.id;
+  hs[0].send({ type: 'leave' }); await until(() => hs[0].msgs.some(m => m.type === 'left'));
+  await until(() => host.state.players.length === 2);
+  const r = client(a.url, 'r'); await r.open; r.send({ type: 'rejoin', code, token: tok });
+  await until(() => r.msgs.length); assert.equal(r.msgs[0].type, 'error', 'old session cannot rejoin');
+  hs[0].send({ type: 'join', code, name: 'Hider0' }); await until(() => host.state.players.length === 3);
+  assert.ok(!host.state.players.some(p => p.id === id0), 'rejoined as a new player');
+  host.send({ type: 'leave' });
+  await until(() => hs[1].state.host !== host.joined.id);
+  assert.ok([hs[0], hs[1]].map(c => c.joinedId || c.msgs.filter(m => m.type === 'joined').pop().id).includes(hs[1].state.host));
+  assert.ok(hs[1].state.events.some(e => /now host/.test(e.text)));
+  // new host can start; leaving mid-game ends when no hiders left
+  const newHost = hs[1].state.host === hs[1].joined.id ? hs[1] : hs[0];
+  const other = newHost === hs[1] ? hs[0] : hs[1];
+  const ms = other.msgs.filter(m => m.type === 'joined').pop();
+  newHost.send({ type: 'role', id: newHost.msgs.filter(m => m.type === 'joined').pop().id, role: 'hunter' });
+  newHost.send({ type: 'role', id: ms.id, role: 'hider' });
+  newHost.send({ type: 'start' }); await until(() => newHost.state.state === 'playing');
+  other.send({ type: 'leave' }); await until(() => newHost.state.state === 'ended');
+  assert.equal(newHost.state.winner, 'hunters');
+  newHost.send({ type: 'leave' }); await until(() => a.lobbies.size === 0);
+  a.server.close(); [host, ...hs, r].forEach(c => c.ws.terminate());
+});
+
+test('reconnect mid-game delivers latest ping immediately', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 30, pingSec: 0.3, hideSec: 0 });
+  host.send({ type: 'start' }); await until(() => host.pings.length >= 1);
+  const { token } = host.joined; host.ws.terminate();
+  const back = client(a.url, 'b'); await back.open; back.send({ type: 'rejoin', code, token });
+  await until(() => back.state);
+  assert.equal(back.state.last[hs[0].joined.id].lat, 37.111111);
+  a.server.close(); [back, ...hs].forEach(c => c.ws.terminate());
+});
+
+// ---------------- feature tests ----------------
+const { distM, bearingDeg, offsetM } = require('../server');
+const only = (...on) => Object.fromEntries(['decoy', 'chime', 'bounty', 'cam', 'compass'].map(f => [f, on.includes(f)]));
+const lobbyOf = (a, code) => a.lobbies.get(code);
+const HIDER0 = { lat: HIDER_LAT[0], lng: -122.1 };
+
+test('lobby feature toggles: all on by default, host-only, persisted across rematch', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 5, hideSec: 0 });
+  assert.deepEqual(host.state.settings.features, only('decoy', 'chime', 'bounty', 'cam', 'compass'));
+  hs[0].send({ type: 'settings', settings: { features: { decoy: false } } }); await sleep(60);
+  assert.equal(host.state.settings.features.decoy, true, 'non-host cannot toggle');
+  host.send({ type: 'settings', settings: { features: { decoy: false, cam: false } } });
+  await until(() => !host.state.settings.features.decoy && !host.state.settings.features.cam);
+  assert.equal(host.state.settings.features.chime, true);
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('ghost decoy: 2 charges, next scheduled ping offset 30-150 m, then real again', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 0.3, hideSec: 0, features: only('decoy') });
+  const id = hs[0].joined.id;
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  assert.equal(hs[0].state.decoys, 2);
+  for (let k = 0; k < 2; k++) {
+    hs[0].send({ type: 'decoy' }); await until(() => hs[0].state.decoyArmed && hs[0].state.decoys === 1 - k);
+    hs[0].send({ type: 'decoy' }); await sleep(30); assert.equal(hs[0].state.decoys, 1 - k, 'cannot stack while armed');
+    const n = host.pings.length; await until(() => host.pings.length > n, 2000);
+    const l = host.pings[host.pings.length - 1].locs[id];
+    const d = distM(HIDER0, l); assert.ok(d >= 29.5 && d <= 150.5, 'decoy offset ' + d);
+    assert.ok(!('decoy' in l) && !host.pings[host.pings.length - 1].decoys, 'hunters cannot tell it is fake');
+    assert.equal(host.pings[host.pings.length - 1].locs[hs[1].joined.id].lat, HIDER_LAT[1], 'other hider unaffected');
+    await until(() => !hs[0].state.decoyArmed);
+    const m = host.pings.length; await until(() => host.pings.length > m, 2000);
+    assert.equal(host.pings[host.pings.length - 1].locs[id].lat, HIDER0.lat, 'only one ping is faked');
+  }
+  hs[0].send({ type: 'decoy' }); await sleep(60); assert.equal(hs[0].state.decoys, 0); assert.ok(!hs[0].state.decoyArmed, 'no third charge');
+  assert.ok(!host.raw().includes('"decoys"'), 'hunter never sees decoy bookkeeping during play');
+  host.send({ type: 'end' }); await until(() => host.state.state === 'ended');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('decoy disabled by host toggle', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 0.3, hideSec: 0, features: only() });
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  hs[0].send({ type: 'decoy' }); await sleep(60); assert.equal(hs[0].state.decoys, 2); assert.ok(!hs[0].state.decoyArmed);
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('cold-ping chime: only hiders within 40 m of a hunter chime; hunters get a no-location notice', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 0.3, hideSec: 0, features: only('chime') });
+  const H = { lat: 37.5, lng: -122.5 };
+  const near = offsetM(H, 35, 90), far = offsetM(H, 46, 270);
+  hs[0].send({ type: 'loc', ...near, acc: 5 }); hs[1].send({ type: 'loc', ...far, acc: 5 });
+  host.send({ type: 'start' }); await until(() => host.pings.length >= 2, 2000);
+  assert.ok(hs[0].msgs.some(m => m.type === 'chime'), 'near hider chimes');
+  assert.ok(!hs[1].msgs.some(m => m.type === 'chime'), 'hider at 46 m does not chime');
+  const notice = host.msgs.find(m => m.type === 'chimeNearby');
+  assert.ok(notice && notice.n === 1 && !JSON.stringify(notice).includes('lat'), 'hunter notice without location');
+  assert.ok(!hs[1].msgs.some(m => m.type === 'chimeNearby'));
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('chime off when toggled off', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 30, pingSec: 0.3, hideSec: 0, features: only() });
+  hs[0].send({ type: 'loc', ...offsetM({ lat: 37.5, lng: -122.5 }, 5, 0), acc: 5 });
+  host.send({ type: 'start' }); await until(() => host.pings.length >= 2, 2000);
+  assert.ok(!hs[0].msgs.some(m => m.type === 'chime'));
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('bounty: spawns every 5 scaled min near centroid (50-250 m), visible to all, replaced by next', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 2.4, pingSec: 5, hideSec: 0, features: only('bounty') });
+  host.send({ type: 'start' }); // bounty every 300*(2.4/1200)=0.6 s
+  await until(() => host.state.bounty, 1500);
+  const b1 = host.state.bounty;
+  assert.ok(hs[0].state.bounty && hs[0].state.bounty.id === b1.id, 'hiders see it too');
+  const ps = [{ lat: 37.5, lng: -122.5 }, { lat: HIDER_LAT[0], lng: -122.1 }, { lat: HIDER_LAT[1], lng: -122.1 }];
+  const c = { lat: ps.reduce((s, p) => s + p.lat, 0) / 3, lng: ps.reduce((s, p) => s + p.lng, 0) / 3 };
+  const d = distM(c, b1); assert.ok(d >= 49 && d <= 251, 'bounty distance from centroid ' + d);
+  await until(() => host.state.bounty && host.state.bounty.id !== b1.id, 1500);
+  assert.ok(lobbyOf(a, code).bounty.id !== b1.id, 'old bounty despawned when next spawned');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('bounty claimed by hider wipes their next scheduled ping; by hunter triggers immediate ping', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 60, pingSec: 0.4, hideSec: 0, features: only('bounty') });
+  const L = lobbyOf(a, code), id0 = hs[0].joined.id, id1 = hs[1].joined.id;
+  host.send({ type: 'start' }); await until(() => host.pings.length >= 1, 2000);
+  assert.ok(host.state.last[id0]);
+  // hider claims: must be within 15 m
+  a.spawnBounty(L, offsetM(HIDER0, 20, 0)); hs[0].send({ type: 'loc', ...HIDER0, acc: 5 }); await sleep(50);
+  assert.ok(L.bounty, '20 m away is too far to claim');
+  const spot = offsetM(HIDER0, 10, 0);
+  hs[0].send({ type: 'loc', ...spot, acc: 5 }); await until(() => !L.bounty);
+  await until(() => hs[0].msgs.some(m => m.type === 'bounty' && m.effect === 'wipe'));
+  assert.ok(hs[0].state.cloaked);
+  const n = host.pings.length; await until(() => host.pings.length > n, 2000);
+  const pg = host.pings[host.pings.length - 1];
+  assert.equal(pg.locs[id0], null, 'wiped hider has no location this cycle'); assert.ok(pg.hidden.includes(id0));
+  assert.ok(pg.locs[id1], 'other hider still pinged');
+  await until(() => !host.state.last[id0]); // hunters see nothing for them
+  assert.ok(!host.raw().includes(String(spot.lat.toFixed(6)).slice(0, 9)), 'wiped coords never sent');
+  const m2 = host.pings.length; await until(() => host.pings.length > m2, 2000);
+  assert.ok(host.pings[host.pings.length - 1].locs[id0], 'only one cycle is wiped');
+  // hunter claims: immediate out-of-cycle ping, schedule unchanged
+  const nextAt = host.state.nextPingAt;
+  a.spawnBounty(L, offsetM({ lat: 37.5, lng: -122.5 }, 8, 45));
+  const before = host.pings.length;
+  host.send({ type: 'loc', ...offsetM({ lat: 37.5, lng: -122.5 }, 6, 45), acc: 5 });
+  await until(() => host.pings.length > before, 300);
+  const out = host.pings[host.pings.length - 1];
+  assert.ok(out.out && out.locs[id0] && out.locs[id1], 'out-of-cycle ping of all hiders');
+  assert.equal(host.state.nextPingAt, nextAt, 'regular schedule not shifted');
+  assert.ok(!L.bounty, 'despawned on claim');
+  assert.ok(hs[0].pings.some(p => p.out && !p.locs), 'hiders told about surprise ping, without coords');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('hider cam peek at minute 10 (scaled): relayed to hunters only, no GPS, unavailable when denied/no reply', async () => {
+  const a = await boot(); const { host, hs, code } = await setup(a, { gameSec: 2.4, pingSec: 5, hideSec: 0, features: only('cam') });
+  const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDA==';
+  hs[0].send({ type: 'cam', cam: 'granted' }); hs[1].send({ type: 'cam', cam: 'denied' });
+  hs[0].ws.on('message', d => { const m = JSON.parse(d); if (m.type === 'camRequest') hs[0].send({ type: 'camPhoto', data: JPEG }); });
+  await until(() => host.state.players.find(p => p.id === hs[0].joined.id).cam === 'granted');
+  const t0 = Date.now(); host.send({ type: 'start' }); // camAt = 600*(2.4/1200) = 1.2 s
+  await until(() => host.msgs.some(m => m.type === 'camPeek' && m.data), 3000);
+  assert.ok(Date.now() - t0 >= 1100, 'photo requested at scaled minute 10');
+  const peeks = host.msgs.filter(m => m.type === 'camPeek');
+  const p0 = peeks.find(m => m.id === hs[0].joined.id && m.data), p1 = peeks.find(m => m.id === hs[1].joined.id);
+  assert.equal(p0.data, JPEG); assert.ok(p1.unavailable && !p1.data, 'denied hider -> photo unavailable');
+  for (const p of peeks) assert.ok(!('lat' in p) && !('lng' in p) && !('loc' in p), 'no GPS data with photo');
+  assert.ok(!hs[0].msgs.some(m => m.type === 'camPeek') && !hs[1].msgs.some(m => m.type === 'camPeek'), 'hiders never get photos');
+  assert.ok(!hs[1].raw().includes(JPEG) && !hs[0].raw().includes('"photos"'));
+  assert.ok(host.state.photos[hs[0].joined.id].has, 'state lists photo for hunters');
+  assert.ok(!lobbyOf(a, code).photos[hs[0].joined.id].lat);
+  hs[1].send({ type: 'camPhoto', data: JPEG }); await sleep(50); // unsolicited upload ignored
+  assert.ok(lobbyOf(a, code).photos[hs[1].joined.id].unavailable);
+  await until(() => host.state.state === 'ended', 3000);
+  hs[0].send({ type: 'rematch' }); await until(() => host.state.state === 'lobby');
+  assert.deepEqual(lobbyOf(a, code).photos, {}, 'photos dropped at the next round (memory only)');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('cam: granted hider that never answers (backgrounded page) -> unavailable after timeout', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 1.2, pingSec: 5, hideSec: 0, features: only('cam') });
+  hs[0].send({ type: 'cam', cam: 'granted' }); await sleep(50);
+  host.send({ type: 'start' });
+  await until(() => host.msgs.some(m => m.type === 'camPeek' && m.id === hs[0].joined.id && m.pending), 2000);
+  await until(() => host.msgs.some(m => m.type === 'camPeek' && m.id === hs[0].joined.id && m.unavailable), 5000);
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('sudden death compass: from 18:00 no map pings, hunters get bearing + band only, never coordinates', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 2, pingSec: 0.25, hideSec: 0, features: only('compass') });
+  const t0 = Date.now(); host.send({ type: 'start' }); // compassAt = 1080*(2/1200) = 1.8 s
+  await until(() => host.msgs.some(m => m.type === 'compass'), 3000);
+  assert.ok(Date.now() - t0 >= 1750, 'compass starts at scaled 18:00');
+  const startIdx = host.msgs.findIndex(m => m.type === 'compass');
+  await until(() => host.state.state === 'ended', 2000);
+  const during = host.msgs.slice(startIdx);
+  const comps = during.filter(m => m.type === 'compass');
+  assert.ok(comps.length >= 1);
+  const want = Math.round(bearingDeg({ lat: 37.5, lng: -122.5 }, { lat: HIDER_LAT[1], lng: -122.1 }));
+  for (const c of comps) {
+    assert.deepEqual(Object.keys(c).sort(), ['band', 'bearing', 'type'], 'compass message has no coordinates');
+    assert.equal(c.bearing, want, 'points at nearest hider'); assert.equal(c.band, 'cold');
+  }
+  const pingsDuring = during.filter(m => m.type === 'ping');
+  assert.ok(pingsDuring.length <= 1, 'only the final end-of-game reveal ping after 18:00');
+  assert.ok(!during.filter(m => m.type === 'state' && m.state === 'playing').some(s => s.last && JSON.stringify(s).includes('"compass":false')), 'state flags compass mode');
+  assert.ok(!hs[0].msgs.some(m => m.type === 'compass'), 'hiders get no compass');
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
