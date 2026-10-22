@@ -100,7 +100,7 @@
     const pp = top(pw); if (pp) add('powerPlayer', pp[0]);
     return out;
   }
-  // Instagram handle: strip @ / parse instagram.com URLs; letters, digits, . and _, max 30. Returns '' if invalid.
+  // Legacy Instagram-only parser (kept for compatibility; new code uses public/socials.js). Returns "" if invalid.
   function igHandle(v) {
     let s = String(v == null ? '' : v).trim();
     const m = s.match(/^(?:https?:\/\/)?(?:www\.|m\.)?(?:instagram\.com|instagr\.am)\/([^/?#\s]+)/i); if (m) s = m[1];

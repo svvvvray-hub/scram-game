@@ -17,7 +17,8 @@
   <button id="btnRejoin" class="big primary hidden">↩️ Rejoin game</button>
   <h1>🏃 Scram</h1><p class="sub">GPS hide &amp; seek in your browser</p>
   <label>Your name<input id="name" maxlength="20" autocomplete="nickname" placeholder="e.g. Murray"></label>
-  <label>Instagram (optional)<input id="ig" maxlength="80" autocomplete="off" autocapitalize="none" placeholder="@yourhandle"></label>
+  <label for="ig">Your @ (optional)</label>
+  <div class="socialRow"><select id="platform" aria-label="Platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="x">X</option><option value="snapchat">Snapchat</option><option value="youtube">YouTube</option><option value="threads">Threads</option><option value="facebook">Facebook</option></select><input id="ig" maxlength="120" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="@yourhandle or profile link"></div>
   <p class="note igNote">Optional. Saved so the host can find you.</p>
   <label class="chk agree"><input id="agree" type="checkbox"> <span>I'm 18+ and agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a></span></label>
   <button class="big rulesBtn" data-rules>📖 How to play</button>
@@ -159,7 +160,7 @@
       <video id="viralVid" class="hidden vertical" controls playsinline></video>
       <div class="seg"><button id="btnViralSave" class="small hidden">⬇ Save</button><button id="btnViralShare" class="small hidden">↗ Share</button></div></div>
     <h3>🕑 Timeline</h3><ol id="timeline" class="timeline"></ol>
-    <a id="btnFollow" class="big follow" target="_blank" rel="noopener">📸 Follow the creator on Instagram</a>
+    <a id="btnFollow" class="big follow" target="_blank" rel="noopener"><span id="followIcon"></span> <span id="followText">Follow the creator</span></a>
     <p class="legalLinks note"><a href="/terms" target="_blank" rel="noopener">Terms</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
   </div>
   <div id="sharePreview" class="hidden"><img id="shareImg" alt="recap image"><div class="note">Recap image · tap to close</div></div>
@@ -201,6 +202,8 @@
 <script src="field.js"></script>
 <script src="icons.js"></script>
 <script src="gps.js"></script>
+<script src="socials.js"></script>
+<script src="config.js"></script>
 <script src="recap.js"></script>
 <script src="inapp.js"></script>
 <script src="app.js"></script>

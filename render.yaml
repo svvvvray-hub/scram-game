@@ -12,3 +12,7 @@ services:
         sync: false
       - key: MAX_GAMES
         value: "50"
+      - key: CREATOR_HANDLE
+        value: mmmmmray
+      - key: CREATOR_PLATFORM
+        value: instagram

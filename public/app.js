@@ -1,5 +1,6 @@
 'use strict';
-const CREATOR_IG = 'mmmmmray'; // creator credit on the recap / share image / reel
+// creator credit on the recap / share image / reel: server env CREATOR_HANDLE + CREATOR_PLATFORM via /config.js
+const CREATOR = window.CREATOR && Socials.norm(window.CREATOR) || { handle: 'mmmmmray', platform: 'instagram' };
 const LEGAL_VERSION = '2026-10-22'; // bump to re-ask for 18+/Terms/Privacy consent
 const SHARE_LINK = location.origin + '/play'; // controllable redirect (server: PLAY_REDIRECT_URL); ?ref=<handle> is appended
 window.SHARE_LINK = SHARE_LINK;
@@ -20,10 +21,15 @@ function toast(t, ms = 2500) { const e = $('toast'); e.textContent = t; e.classL
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 if (!$('name').value) $('name').value = localStorage.getItem('scramName') || '';
+{ const sp = localStorage.getItem('scramPlatform'); $('platform').value = Socials.isPlatform(sp) ? sp : Socials.DEFAULT; } // remembered platform choice (old saves = Instagram)
 if (!$('ig').value) $('ig').value = localStorage.getItem('scramIg') ? '@' + localStorage.getItem('scramIg') : '';
+$('platform').onchange = () => localStorage.setItem('scramPlatform', $('platform').value);
+// pasting a profile link picks the platform automatically
+$('ig').addEventListener('input', () => { const u = Socials.fromUrl($('ig').value.trim()); if (u && u.platform !== $('platform').value) { $('platform').value = u.platform; localStorage.setItem('scramPlatform', u.platform); } });
 $('agree').checked = localStorage.getItem('scramLegal') === LEGAL_VERSION;
-const igLink = h => h ? `<a class="ig" href="https://www.instagram.com/${encodeURIComponent(h)}/" target="_blank" rel="noopener">@${esc(h)}</a>` : '';
-window.CREATOR_IG = CREATOR_IG;
+// a player's handle: platform icon + @handle, linking to their profile on that platform
+const igLink = so => so && Socials.norm(so) ? `<a class="ig" data-platform="${so.platform}" href="${esc(Socials.url(so))}" target="_blank" rel="noopener" title="${esc(Socials.label(so.platform))}">${Socials.icon(so.platform, 14)}@${esc(so.handle)}</a>` : '';
+window.igLink = igLink; window.CREATOR = CREATOR; window.CREATOR_IG = CREATOR.handle; // CREATOR_IG kept for older callers
 const qcode = new URLSearchParams(location.search).get('code'); if (qcode) { $('code').value = qcode.toUpperCase(); $('code').classList.add('prefilled'); $('btnJoin').classList.add('primary'); $('btnJoin').dataset.code = qcode.toUpperCase(); }
 
 function connect() {
@@ -269,10 +275,10 @@ function go(type) {
   localStorage.setItem('scramName', name);
   if (!$('agree').checked) return toast('Please confirm you are 18+ and agree to the Terms and Privacy Policy', 4000);
   localStorage.setItem('scramLegal', LEGAL_VERSION);
-  const igRaw = $('ig').value.trim(), ig = Recap.igHandle(igRaw);
-  if (igRaw && !ig) return toast('Instagram handle: letters, numbers, . and _ (max 30)');
-  if (ig) localStorage.setItem('scramIg', ig); else localStorage.removeItem('scramIg');
-  const msg = type === 'create' ? { type, name, ig, agreed: true, legal: LEGAL_VERSION, dev: DEV, ref: localStorage.getItem('scramRef') || '' } : { type, name, ig, agreed: true, legal: LEGAL_VERSION, dev: DEV, ref: localStorage.getItem('scramRef') || '', code: $('code').value.trim().toUpperCase() };
+  const igRaw = $('ig').value.trim(), social = Socials.parse(igRaw, $('platform').value);
+  if (igRaw && !social) return toast(Socials.hint(Socials.fromUrl(igRaw)?.platform || $('platform').value), 3500);
+  if (social) { localStorage.setItem('scramIg', social.handle); localStorage.setItem('scramPlatform', social.platform); $('platform').value = social.platform; } else localStorage.removeItem('scramIg');
+  const msg = type === 'create' ? { type, name, social, agreed: true, legal: LEGAL_VERSION, dev: DEV, ref: localStorage.getItem('scramRef') || '' } : { type, name, social, agreed: true, legal: LEGAL_VERSION, dev: DEV, ref: localStorage.getItem('scramRef') || '', code: $('code').value.trim().toUpperCase() };
   if (type === 'join' && msg.code.length < 4) return toast('Enter the join code');
   $('busyMsg').classList.add('hidden'); startGps(); wake(); unlockAudio();
   if (ws?.readyState === 1) sendMsg(msg); else pendingAction = msg;
@@ -300,7 +306,7 @@ function renderLobby() {
       : `<span class="pill ${p.role}">${p.role === 'hunter' ? '🔦 hunter' : '🙈 hider'}</span>`;
     const cam = p.role === 'hider' && S.settings.features?.cam ? (p.cam === 'granted' ? '<span class="pill ok">📷</span>' : p.cam === 'denied' ? '<span class="pill bad">no 📷</span>' : '') : '';
     const outP = S.field && p.out ? '<span class="pill out">outside field</span>' : '';
-    return `<li><span class="nm">${esc(p.name)}${igLink(p.ig)}${cam}${outP}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
+    return `<li><span class="nm">${esc(p.name)}${igLink(p.social)}${cam}${outP}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
   }).join('');
   for (const b of document.querySelectorAll('[data-role]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.role);
     if (p.role === 'hunter' && S.players.filter(x => x.role === 'hunter').length <= 1) return toast('Need at least 1 hunter');
@@ -587,7 +593,7 @@ function renderEnd() {
   $('winner').textContent = S.winner === 'hiders' ? '🙈 Hiders win!' : '🔦 Hunters win!';
   const hiders = S.players.filter(p => p.caught || p.role === 'hider');
   $('summary').innerHTML = hiders.map((p, i) => { const n = S.pings.filter(pg => pg.locs[p.id]).length;
-    return `<div class="sumrow"><b style="color:${COLORS[i % COLORS.length]}">● ${esc(p.name)}</b>${igLink(p.ig)} — ${p.caught ? 'caught at ' + fmt(p.caughtAt - S.startedAt) : 'survived'} · ${n} ping${n === 1 ? '' : 's'}</div>`; }).join('') +
+    return `<div class="sumrow"><b style="color:${COLORS[i % COLORS.length]}">● ${esc(p.name)}</b>${igLink(p.social)} — ${p.caught ? 'caught at ' + fmt(p.caughtAt - S.startedAt) : 'survived'} · ${n} ping${n === 1 ? '' : 's'}</div>`; }).join('') +
     `<p class="note">${S.pingCount} pings · ${S.events.map(e => esc(e.text)).join(' · ')}</p>`;
   if (!endMap) { endMap = L.map('endMap'); baseLayer(endMap); }
   if (endLayer) endLayer.remove(); endLayer = L.layerGroup().addTo(endMap); drawFieldLayers(L.layerGroup().addTo(endLayer), S.field);
@@ -600,7 +606,8 @@ function renderEnd() {
     trail.forEach((ll, k) => L.circleMarker(ll, { radius: 5, color: c, fillOpacity: 1 }).bindTooltip(`${esc(p.name)} #${k + 1}`).addTo(endLayer));
   });
   setTimeout(() => { endMap.invalidateSize(); if (all.length) endMap.fitBounds(L.latLngBounds(all).pad(.2)); else endMap.setView([myLoc?.lat || 0, myLoc?.lng || 0], 15); }, 50);
-  $('btnFollow').href = `https://www.instagram.com/${CREATOR_IG}/`;
+  $('btnFollow').href = Socials.url(CREATOR); $('btnFollow').dataset.platform = CREATOR.platform; $('followIcon').innerHTML = Socials.icon(CREATOR.platform, 22);
+  $('followText').textContent = `Follow @${CREATOR.handle} on ${Socials.label(CREATOR.platform)}`;
   if (window.RecapUI?.data?.round === S.round) RecapUI.render(); else sendMsg({ type: 'recap' });
 }
 $('btnHome').onclick = () => { window.RecapUI?.clear(); window.Reel?.clear(); window.Rec?.releaseSaved?.(); viewingEnd = false; dismissedRound = S ? S.round : -1; sendMsg({ type: 'rematch' }); if (S && S.state === 'lobby') render(); };

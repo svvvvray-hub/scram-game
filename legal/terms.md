@@ -41,8 +41,8 @@ If we learn that someone under 18 is using the Game, we may remove them from a l
 
 ## 3. How the Game works
 
-- **Lobbies.** A host creates a lobby and shares a code, link, or QR code. Players join with a display name and, optionally, an Instagram handle. Anyone with the code or link can join. Share it only with people you intend to play with.
-- **Location sharing.** During a game your device sends your live GPS location to our server. Depending on your role, other players see some of your location. For example, hunters receive hiders' locations at each "ping," which happens about every 60 seconds by default, plus at certain power-up events. Your display name, Instagram handle (if provided), role, and in-game status are visible to the other players in your lobby.
+- **Lobbies.** A host creates a lobby and shares a code, link, or QR code. Players join with a display name and, optionally, a social media handle (e.g., Instagram, TikTok, X). If you add a handle, it is saved as described in the Privacy Policy, and you can ask us to delete it at any time. Anyone with the code or link can join. Share it only with people you intend to play with.
+- **Location sharing.** During a game your device sends your live GPS location to our server. Depending on your role, other players see some of your location. For example, hunters receive hiders' locations at each "ping," which happens about every 60 seconds by default, plus at certain power-up events. Your display name, social media handle (if provided), role, and in-game status are visible to the other players in your lobby.
 - **Recaps.** At the end of a round, players in the lobby can see a recap that may include each player's location trail on a map.
 - **Optional features.** You may optionally consent to a one-time camera snapshot (the "hider cam sneak peek"), record video on your own device, and send short highlight clips to the host. Our [Privacy Policy](privacy.html) explains how these work.
 - **No accounts, no saved games.** Games live only in server memory. A game may be lost at any time, for example when the server restarts, sleeps, or a lobby closes.
@@ -69,7 +69,7 @@ You agree **not** to:
 
 - Use the Game to stalk, track, harass, threaten, intimidate, or harm anyone. This includes tracking a person who has not knowingly and voluntarily joined a game.
 - Share another player's location, photos, clips, or identity outside the game in order to harass or endanger them.
-- Pick a display name or Instagram handle that impersonates someone else or that is hateful, sexually explicit, or harassing. Do not enter an Instagram handle that isn't yours.
+- Pick a display name or social media handle that impersonates someone else or that is hateful, sexually explicit, or harassing. Do not enter a social media handle that isn't yours.
 - Upload, send, or capture content that is illegal, sexually explicit, violent, or hateful, or that invades someone's privacy.
 - Play under the influence of alcohol or drugs in a way that puts you or others at risk.
 - Spoof GPS, tamper with the Game, abuse bugs, or interfere with other players' games. Do not attack, overload, scrape, or reverse-engineer the Service, try to access lobbies you weren't invited to, or try to get location data you aren't meant to see.
@@ -90,7 +90,7 @@ The Game lets you record video and audio on your own device, and it can capture 
 
 ## 7. Your content
 
-"**Your Content**" means the display name, Instagram handle, photos, and highlight clips you choose to submit to the Game. You keep ownership of Your Content. You give us a limited, worldwide, royalty-free, non-exclusive license to host, store temporarily, transmit, display, and process Your Content, and to show it to the other players in your lobby, but only as needed to run the Game features you use. You confirm that you have the rights and consents needed to submit Your Content. This includes the consent of any people who appear in it.
+"**Your Content**" means the display name, social media handle, photos, and highlight clips you choose to submit to the Game. You keep ownership of Your Content. You give us a limited, worldwide, royalty-free, non-exclusive license to host, store temporarily, transmit, display, and process Your Content, and to show it to the other players in your lobby, but only as needed to run the Game features you use. You confirm that you have the rights and consents needed to submit Your Content. This includes the consent of any people who appear in it.
 
 We do not claim ownership of video you record on your own device. We do not receive that video unless you choose to send highlights.
 
@@ -104,7 +104,7 @@ The Game is currently free. In the future we may offer optional paid items, such
 
 ## 10. Third-party links and services
 
-The Game links to or depends on third-party services. These include Instagram profiles, OpenStreetMap map tiles, our hosting provider (Render), and possibly a redirect or landing page in the future. We don't control those services and aren't responsible for them. Your use of them is governed by their own terms and privacy policies.
+The Game links to or depends on third-party services. These include social media profiles (e.g., Instagram, TikTok, X), OpenStreetMap map tiles, our hosting provider (Render), and possibly a redirect or landing page in the future. We don't control those services and aren't responsible for them. Your use of them is governed by their own terms and privacy policies.
 
 ## 11. Changes to the Game and these Terms
 

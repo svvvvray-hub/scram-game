@@ -61,16 +61,16 @@ const BUSY = 'Last Ping is busy right now. Try again in a few minutes!';
   const m = s.refs.find(x => x.ref === 'murray'); check(m && m.players >= 2 && m.games >= 1, 'referrer murray: ' + JSON.stringify(m));
   check(s.playClicks >= 2 && s.shares.viral >= 2 && s.shares.reel >= 1, 'play clicks + shares tracked');
   check(s.live.games >= 3 && s.live.online >= 5, 'live games/players: ' + JSON.stringify(s.live));
-  // Instagram handles (admin only)
+  // social handles (admin only)
   check(s.handleCount === 3 && s.handles.some(h => h.handle === 'sunny.seeker' && h.ref === 'murray') && s.handles.some(h => h.handle === 'ben.runs_fast' && h.ref === 'lena'), 'handles in stats.json: ' + JSON.stringify(s.handles));
   check((await fetch(URL + '/admin/handles.csv')).status === 401 && (await fetch(URL + '/admin/stats.json')).status === 401, 'csv/stats.json require auth');
   const pub = (await Promise.all(['/', '/privacy', '/api/rules'].map(p => fetch(URL + p).then(r => r.text())))).join(''); check(!/sunny\.seeker|ben\.runs_fast/.test(pub), 'handles never on public endpoints');
-  check(/Instagram handle[^<]*saved[\s\S]*may be viewed by the game creator/.test(await (await fetch(URL + '/privacy')).text()), 'privacy page discloses saved handles');
+  check(/social media handle[^<]*saved[\s\S]*may be viewed by the game creator/.test(await (await fetch(URL + '/privacy')).text()), 'privacy page discloses saved handles');
   await A.goto(URL + '/admin');
-  check(/Players with Instagram/.test(await A.textContent('#handles')) && (await A.textContent('#handleCount')).trim() === '3', 'Players with Instagram table + count');
-  check(await A.getAttribute('#handleTable a[href*="instagram.com/sunny.seeker"]', 'href') === 'https://www.instagram.com/sunny.seeker', 'handle links to instagram');
+  check(/Players' socials/.test(await A.textContent('#handles')) && (await A.textContent('#handleCount')).trim() === '3', "Players' socials table + count");
+  check(await A.getAttribute('#handleTable a[href*="instagram.com/sunny.seeker"]', 'href') === 'https://www.instagram.com/sunny.seeker/', 'handle links to instagram');
   const [dl] = await Promise.all([A.waitForEvent('download'), A.click('#csvBtn button')]); const csv = fs.readFileSync(await dl.path(), 'utf8');
-  check(csv.startsWith('handle,profile_url,first_seen,last_seen,games,ref') && /sunny\.seeker/.test(csv) && /ana_hides/.test(csv), 'Download CSV works');
+  check(csv.startsWith('handle,platform,profile_url,first_seen,last_seen,games,ref') && /sunny\.seeker/.test(csv) && /ana_hides/.test(csv), 'Download CSV works');
   await A.click('#sortGames'); check(/Games ▼/.test(await A.textContent('#handleTable')), 'sortable by games');
   await A.click('#sortLast'); check(/Last seen ▼/.test(await A.textContent('#handleTable')), 'sortable by last seen');
   await A.goto(URL + '/admin'); await A.screenshot({ path: 'shots/v11_admin.png', fullPage: true });

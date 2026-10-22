@@ -179,7 +179,7 @@ message) — never during play — and are wiped at Play again / next start. The
   (“Ana walked right past Bob, 12 m, at 07:42”) — in the timeline and on the replay (😱);
 - 🏆 trophies: Ghost, Bloodhound, Close Shave, Decoy Master, Bounty Hunter, Marathoner, Escape Artist, First Blood, Zombie, Rule Bender;
 - timeline of every event; *📤 Share recap* renders a 1080×1350 PNG (paths, awards, trophies, lobby code/date,
-  opted-in Instagram handles, “Game by @mmmmmray”) and shares it via `navigator.share({files})`, else downloads it.
+  opted-in social handles with their platform, “Game by @mmmmmray · Instagram”) and shares it via `navigator.share({files})`, else downloads it.
 Math lives in `public/recap.js` (shared by server and browser, unit-tested).
 
 **Recording.** Default *Standard* preset: 1280×720 ideal, ≤30 fps, 1.5 Mbps video, 64 kbps mono audio
@@ -211,16 +211,23 @@ out of memory — prefer Saver/Standard.
 (set `PLAY_REDIRECT_URL` to point it at a custom domain); `/p/<code>` deep-links a lobby. `?ref=<handle>` visits are
 counted in memory and logged (`[ref] handle visits=N`).
 
-**Instagram (optional).** Join screen field; accepts `@handle`, `handle` or an instagram.com URL (letters, digits,
-`.`, `_`, max 30), remembered in localStorage. Shown as a link only in the lobby and the recap (never during a game),
-on the share image and the reel end cards. `CREATOR_IG = 'mmmmmray'` → “Follow the creator on Instagram”.
+**Your @ (optional).** Join screen field with a platform picker: Instagram (default), TikTok, X, Snapchat, YouTube,
+Threads, Facebook (`public/socials.js`, shared by browser and server). Accepts `@handle`, `handle` or a pasted profile URL
+(the platform is detected from the URL). Per-platform rules (charset from `[A-Za-z0-9._-]`, 1-30 chars, e.g. X 1-15
+`[A-Za-z0-9_]`, TikTok 2-24, Snapchat 3-15 starting with a letter, Facebook 5-30); lowercased except X and YouTube,
+which keep display case (matching is case-insensitive). Handle + platform are remembered in localStorage and sent as
+`social: {handle, platform}` (the legacy `ig` string is still accepted as Instagram). Shown with a small inline platform
+badge, linking to instagram.com/h, tiktok.com/@h, x.com/h, snapchat.com/add/h, youtube.com/@h, threads.net/@h or
+facebook.com/h, only in the lobby and the recap (never during a game), on the share image and the reel end cards.
+Creator credit: env `CREATOR_HANDLE` + `CREATOR_PLATFORM` (default `mmmmmray` / `instagram`; legacy `CREATOR_IG` still
+works as an Instagram handle), served at `/config.js` → “Follow @mmmmmray on Instagram”.
 
 **Legal.** `/terms` and `/privacy` (Last Ping Terms / Privacy). Create/Join requires “I'm 18+ and agree to the Terms
 and Privacy Policy” (remembered per `LEGAL_VERSION`); the server rejects create/join without `agreed: true`.
 
 ### Tests
 `npm test` (unit: game, trails, awards/trophies/close calls, infection, multi-hunter targeting, catch confirmation,
-highlight uploads, Instagram validation, /play redirect, consent). E2E (server on :3000, Chrome):
+highlight uploads, social handle validation per platform, /play redirect, consent). E2E (server on :3000, Chrome):
 `node test/e2e.js`, `e2e_features.js`, `e2e_field.js`, `e2e_record.js`, `e2e_recap.js` (2-hunter game, catch confirm,
 3 s recording segments at the preset bitrate, recap replay/heat map/share image, reels, group reel, viral clip).
 
@@ -335,6 +342,7 @@ Set `ADMIN_KEY` (a long random string) to enable `/admin`. Without it, `/admin` 
 Sign in with the login form or open `/admin?key=YOUR_KEY` once: both set an HttpOnly cookie that holds an HMAC of the key (never the key), and the key is removed from the URL.
 
 - **Stats:** games created/started per day, unique players per day (anonymous random device id, SHA-256 hashed, no personal data), live games/players, totals, top `?ref` referrers (new players, games, visits), `/play` clicks, reel and "Make it viral" shares. Charts are inline SVG. JSON at `/admin/stats.json` (auth required).
+- **Players' socials:** every handle a player chose to enter, keyed by platform + handle (case-insensitive), with platform, first/last seen, games played and `?ref`. Filter by platform, per-platform counts, links to the right profile, sortable. CSV at `/admin/socials.csv` (alias `/admin/handles.csv`; columns `handle,platform,profile_url,first_seen,last_seen,games,ref`, `?platform=` filter). 🗑️ Delete per row (confirmation, authenticated POST `/admin/handles/delete` with `platform` + `handle`) for removal requests. Saved Instagram-only entries from older versions are migrated on load (no platform = Instagram).
 - **Brake switch:** pause new games, max concurrent games (default `MAX_GAMES`, 50), max new games per hour (0 = unlimited). Blocked creates show "Last Ping is busy right now. Try again in a few minutes!". Joining an existing game is never blocked, and running games keep going. Settings change only via authenticated POST `/admin/settings`.
 - **Storage:** `STATS_FILE` (default `./data/stats.json`, gitignored), written at most every 5 s and on shutdown.
 

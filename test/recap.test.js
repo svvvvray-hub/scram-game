@@ -181,17 +181,41 @@ test('instagram handle validation', () => {
   for (const bad of ['', '@', 'has space', 'bad-dash', 'a'.repeat(31), '<script>', '.lead', 'trail.', 'a..b', 'https://instagram.com/p/abc', 'https://evil.com/user', null]) assert.equal(h(bad), '', String(bad));
   assert.equal(h('a'.repeat(30)), 'a'.repeat(30));
 });
-test('instagram handles: shown in lobby + recap, never during the game', async () => {
-  const a = await boot(); const h = client(a.url); await h.open; h.send({ type: 'create', agreed: true, name: 'H', ig: '@Host.Ig' }); await until(() => h.joined);
-  const s = client(a.url); await s.open; s.send({ type: 'join', agreed: true, code: h.joined.code, name: 'S', ig: 'not valid!' }); await until(() => s.joined);
+test('social handles: {handle, platform} shown in lobby + recap, never during the game', async () => {
+  const a = await boot(); const h = client(a.url); await h.open; h.send({ type: 'create', agreed: true, name: 'H', social: { handle: '@Host.Ig', platform: 'instagram' } }); await until(() => h.joined);
+  const s = client(a.url); await s.open; s.send({ type: 'join', agreed: true, code: h.joined.code, name: 'S', social: { handle: 'not valid!', platform: 'tiktok' } }); await until(() => s.joined);
   await until(() => h.state.players.length === 2);
-  assert.equal(h.state.players[0].ig, 'host.ig'); assert.ok(!('ig' in h.state.players[1]));
-  s.send({ type: 'ig', ig: 'https://instagram.com/sam_s' }); await until(() => h.state.players[1].ig === 'sam_s');
+  assert.deepEqual(h.state.players[0].social, { handle: 'host.ig', platform: 'instagram' }); assert.ok(!('social' in h.state.players[1]) && !('ig' in h.state.players[0]));
+  s.send({ type: 'social', social: { handle: 'https://www.tiktok.com/@Sam_S', platform: 'x' } }); await until(() => h.state.players[1].social?.handle === 'sam_s');
+  assert.equal(h.state.players[1].social.platform, 'tiktok');
   h.send({ type: 'start' }); await until(() => h.state.state !== 'lobby'); const mark = h.msgs.length;
   await sleep(100); assert.ok(!h.msgs.slice(mark).some(m => JSON.stringify(m).includes('host.ig') || JSON.stringify(m).includes('sam_s')), 'no handles during play');
   h.send({ type: 'end' }); await until(() => h.recap);
-  assert.equal(h.state.players[1].ig, 'sam_s'); assert.equal(h.recap.players.find(p => p.name === 'S').ig, 'sam_s');
+  assert.deepEqual(h.state.players[1].social, { handle: 'sam_s', platform: 'tiktok' }); assert.deepEqual(h.recap.players.find(p => p.name === 'S').social, { handle: 'sam_s', platform: 'tiktok' });
   done(a, [h, s]);
+});
+test('legacy ig field still accepted (= Instagram)', async () => {
+  const a = await boot(); const h = client(a.url); await h.open; h.send({ type: 'create', agreed: true, name: 'H', ig: 'https://instagram.com/old.client' }); await until(() => h.state);
+  assert.deepEqual(h.state.players[0].social, { handle: 'old.client', platform: 'instagram' }); done(a, [h]);
+});
+test('Socials: per-platform validation, URL parsing, profile URLs', () => {
+  const S = require('../public/socials'), p = (v, k) => JSON.stringify(S.parse(v, k));
+  assert.equal(S.parse('@Murray', undefined).platform, 'instagram');
+  const ok = [['@Some.User_1', 'instagram', 'some.user_1', 'instagram'], ['https://www.instagram.com/mmmmmray/', 'tiktok', 'mmmmmray', 'instagram'], ['instagram.com/a_b?igsh=xyz', null, 'a_b', 'instagram'],
+    ['https://www.tiktok.com/@Ana.B?lang=en', 'instagram', 'ana.b', 'tiktok'], ['@ana.b', 'tiktok', 'ana.b', 'tiktok'], ['https://twitter.com/Jack_B', null, 'Jack_B', 'x'], ['x.com/elon', null, 'elon', 'x'], ['Jack_B', 'x', 'Jack_B', 'x'],
+    ['https://www.snapchat.com/add/Snap-Pal', null, 'snap-pal', 'snapchat'], ['snap.pal', 'snapchat', 'snap.pal', 'snapchat'], ['https://youtube.com/@MrBeast', null, 'MrBeast', 'youtube'], ['my-chan', 'youtube', 'my-chan', 'youtube'],
+    ['https://www.threads.net/@zuck', null, 'zuck', 'threads'], ['threads.com/@a.b', null, 'a.b', 'threads'], ['https://m.facebook.com/John.Smith', null, 'john.smith', 'facebook'], ['fb.com/jane.doe5', null, 'jane.doe5', 'facebook']];
+  for (const [v, k, h, pl] of ok) assert.deepEqual(S.parse(v, k), { handle: h, platform: pl }, v);
+  const bad = [['', null], ['@', null], ['has space', 'instagram'], ['bad-dash', 'instagram'], ['a'.repeat(31), 'instagram'], ['<script>', 'x'], ['.lead', 'instagram'], ['trail.', 'tiktok'], ['a..b', 'instagram'],
+    ['https://instagram.com/p/abc', null], ['https://evil.com/user', null], ['a'.repeat(16), 'x'], ['dot.ted', 'x'], ['a', 'tiktok'], ['1abc', 'snapchat'], ['ab', 'snapchat'], ['abc-', 'snapchat'], ['dash-ok', 'tiktok'],
+    ['ab', 'youtube'], ['abcd', 'facebook'], ['under_score', 'facebook'], ['https://www.tiktok.com/discover', null], ['https://youtube.com/watch?v=1', null], ['https://facebook.com/profile.php?id=1', null], ['ü', 'instagram'], [null, null]];
+  for (const [v, k] of bad) assert.equal(S.parse(v, k), null, p(v, k));
+  assert.equal(S.url({ handle: 'h', platform: 'instagram' }), 'https://www.instagram.com/h/'); assert.equal(S.url({ handle: 'h', platform: 'tiktok' }), 'https://www.tiktok.com/@h');
+  assert.equal(S.url({ handle: 'h', platform: 'x' }), 'https://x.com/h'); assert.equal(S.url({ handle: 'h', platform: 'snapchat' }), 'https://www.snapchat.com/add/h');
+  assert.equal(S.url({ handle: 'h', platform: 'youtube' }), 'https://www.youtube.com/@h'); assert.equal(S.url({ handle: 'h', platform: 'threads' }), 'https://www.threads.net/@h');
+  assert.equal(S.url({ handle: 'h', platform: 'facebook' }), 'https://www.facebook.com/h'); assert.equal(S.url({ handle: 'h', platform: 'myspace' }), '');
+  assert.equal(S.key({ handle: 'Jack_B', platform: 'x' }), 'x:jack_b'); assert.deepEqual(S.LIST, ['instagram', 'tiktok', 'x', 'snapchat', 'youtube', 'threads', 'facebook']);
+  for (const k of S.LIST) assert.match(S.icon(k), new RegExp(`^<svg[^>]+aria-label="${S.label(k)}"`));
 });
 test('/play redirect (302 to / by default, PLAY_REDIRECT_URL override), /p/<code>, ?ref counting', async () => {
   const get = (a, p) => new Promise((res, rej) => require('http').get(`http://127.0.0.1:${a.server.address().port}${p}`, r => { r.resume(); res(r); }).on('error', rej));

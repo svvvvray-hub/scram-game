@@ -13,7 +13,7 @@ const T0 = Date.now();
   fs.mkdirSync('shots', { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || exe, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
   const errs = [];
-  const mk = async (name, geo, ig) => {
+  const mk = async (name, geo, ig, plat) => {
     const ctx = await browser.newContext({ ...devices['Pixel 7'], acceptDownloads: true, geolocation: { ...geo, accuracy: 6 }, permissions: ['geolocation', 'camera', 'microphone'] }); await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1')); // legacy suites: no role card / coach tips (covered by e2e_v9)
     const page = await ctx.newPage(); const frames = [], downloads = [];
     await page.addInitScript(() => { window.SCRAM_SEG_MS = 3000; });
@@ -21,12 +21,12 @@ const T0 = Date.now();
     page.on('websocket', w => w.on('framereceived', f => frames.push(String(f.payload))));
     page.on('download', d => downloads.push(d.suggestedFilename()));
     page.on('dialog', d => d.accept());
-    await open(page, URL); await page.fill('#name', name); if (ig) await page.fill('#ig', ig);
+    await open(page, URL); await page.fill('#name', name); if (plat) await page.selectOption('#platform', plat); if (ig) await page.fill('#ig', ig);
     return { name, ctx, page, frames, downloads };
   };
   const base = { latitude: 51.5079, longitude: -0.0877 };
   const murray = await mk('Murray', base, 'https://www.instagram.com/murray.hunts/');
-  const alice = await mk('Alice', { latitude: 51.5079, longitude: -0.0877 + 0.0045 }, '@alice_hides'); // ~310 m east; walks to 10 m from Murray mid-game
+  const alice = await mk('Alice', { latitude: 51.5079, longitude: -0.0877 + 0.0045 }, '@alice_hides', 'tiktok'); // ~310 m east; walks to 10 m from Murray mid-game
   const carl = await mk('Carl', { latitude: 51.5106, longitude: -0.0877 });
   const bob = await mk('Bob', { latitude: 51.5110, longitude: -0.0877 });
   await murray.page.check('#agree'); await murray.page.click('#btnCreate'); await murray.page.waitForSelector('#lobbyCode:not(:empty)');
@@ -38,7 +38,7 @@ const T0 = Date.now();
   await murray.page.waitForFunction(() => S.players.filter(p => p.role === 'hunter').length === 2);
   check(/2 hunters · 🙈 2 hiders/.test(await murray.page.textContent('#roleCounts')), 'role counts: ' + await murray.page.textContent('#roleCounts'));
   check(await murray.page.isChecked('#sBecome'), 'infection toggle on by default');
-  check(await murray.page.$$eval('#playerList a.ig', as => as.map(a => a.textContent + '|' + a.href + '|' + a.rel + '|' + a.target).join(',')).then(t => t.includes('@murray.hunts|https://www.instagram.com/murray.hunts/|noopener|_blank') && t.includes('@alice_hides')), 'instagram handles link in lobby');
+  check(await murray.page.$$eval('#playerList a.ig', as => as.map(a => a.textContent + '|' + a.href + '|' + a.rel + '|' + a.target).join(',')).then(t => t.includes('@murray.hunts|https://www.instagram.com/murray.hunts/|noopener|_blank') && t.includes('@alice_hides|https://www.tiktok.com/@alice_hides|')), 'social handles link to the right platform in lobby');
   for (const [id, v] of [['#sGame', '1'], ['#sPing', '5'], ['#sHide', '0']]) { await murray.page.fill(id, v); await murray.page.dispatchEvent(id, 'change'); }
   await sleep(500); await murray.page.screenshot({ path: 'shots/roles.png', fullPage: true });
   // randomize with 2 hunters keeps 2, then restore Murray+Carl
@@ -85,8 +85,8 @@ const T0 = Date.now();
   check(rc.cc.some(t => /walked right past Alice, 1\d m/.test(t)), 'close call detected: ' + rc.cc.join('; '));
   check(rc.tr.includes('closeShave:Alice') && rc.tr.includes('escapeArtist:Alice') && rc.tr.includes('firstBlood:Carl'), 'trophies: ' + rc.tr.join(', '));
   check(rc.tl > 5 && /walked right past/.test(await murray.page.textContent('#timeline')), 'timeline lists events incl. close call');
-  check(/@alice_hides/.test(await murray.page.textContent('#timeline')), 'handles shown in recap');
-  check(await murray.page.getAttribute('#btnFollow', 'href') === 'https://www.instagram.com/mmmmmray/', 'Follow the creator button');
+  check(/@alice_hides/.test(await murray.page.textContent('#timeline')) && await murray.page.$('#timeline a.ig[data-platform="tiktok"] svg[aria-label="TikTok"]'), 'handles shown in recap with platform icon');
+  check(await murray.page.getAttribute('#btnFollow', 'href') === 'https://www.instagram.com/mmmmmray/' && /Follow @mmmmmray on Instagram/.test(await murray.page.textContent('#btnFollow')), 'Follow the creator button');
   // replay
   await murray.page.click('#rPlay'); await sleep(1500);
   const rp = await murray.page.evaluate(() => ({ playing: RecapUI.playing, t: RecapUI.t - RecapData.startedAt, D: RecapData.endedAt - RecapData.startedAt, time: document.getElementById('rTime').textContent }));

@@ -69,7 +69,10 @@ body.swapAnim #map,body.swapAnim #recPreview{transition:left .18s ease,top .18s 
 #bubbleHit{position:fixed;left:var(--bx);top:var(--by);width:var(--bs);height:var(--bs);border-radius:50%;z-index:1460;touch-action:none;cursor:pointer}
 body.dragging #map,body.dragging #recPreview{transition:none}
 /* v5: roles, catch confirm, recap, reels, instagram */
-a.ig{color:#f472b6;font-size:.8em;margin-left:6px;text-decoration:none}
+a.ig{color:#f472b6;font-size:.8em;margin-left:6px;text-decoration:none;display:inline-flex;align-items:center;gap:3px;vertical-align:middle}
+.sicon{flex:none;vertical-align:middle}
+.socialRow{display:flex;gap:8px;margin-top:4px}.socialRow select{flex:0 0 auto;width:auto;max-width:42%}.socialRow input{flex:1;min-width:0;margin-top:0}.socialRow select{margin-top:0}label[for=ig]{margin-bottom:0}
+.follow{display:flex!important;align-items:center;justify-content:center;gap:8px}
 .catchBox{background:#7c2d12;border-radius:10px;padding:10px;margin-bottom:6px}.catchBox .row{display:flex;gap:8px;align-items:center;margin:4px 0}.catchBox .row span{flex:1}
 #endMapWrap{position:relative}.heatLegend{position:absolute;left:8px;bottom:18px;z-index:500;background:#000b;padding:4px 8px;border-radius:8px;font-size:.8em}.hl1{color:#60a5fa}.hl2{color:#f87171}
 .replayBar{display:flex;gap:8px;align-items:center}.replayBar input{flex:1;padding:0;margin:0;height:28px}

@@ -94,9 +94,10 @@
     return { c, g, stream, v, rec, hold, playSeg, fadeCard, get actx() { return actx; }, get dst() { return dst; }, get clipGain() { return clipGain; }, close() { stream.getTracks().forEach(t => t.stop()); try { actx?.close(); } catch {} v.removeAttribute('src'); v.load?.(); } };
   }
   const dateStr = R => new Date(R.startedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  const credit = () => `Game by @${window.CREATOR_IG || 'mmmmmray'}`;
+  const credit = () => { const c = window.CREATOR || { handle: window.CREATOR_IG || 'mmmmmray', platform: 'instagram' }; return `Game by @${c.handle} · ${Socials.label(c.platform)}`; };
+  const tag = so => `@${so.handle} (${Socials.label(so.platform)})`;
   function finalLines(R) {
-    const tro = R.trophies.slice(0, 4).map(t => `${t.icon} ${t.title} · ${t.name}`), igs = R.players.filter(p => p.ig).map(p => '@' + p.ig).join('  ');
+    const tro = R.trophies.slice(0, 4).map(t => `${t.icon} ${t.title} · ${t.name}`), igs = R.players.filter(p => p.social).map(p => tag(p.social)).join('  ');
     return ['🏆 Trophies', ...(tro.length ? tro : ['GG!']), ...(igs ? [igs] : [])];
   }
   async function buildMine(auto) {
@@ -267,11 +268,11 @@
         }, sh.key ? k => 1 + 0.45 * Math.min(1, k * 1.6) : k => 1.05 + 0.08 * k); // punch-in zoom on the key moment
       }
       duck(0.7);
-      const link = shareLink(meP.ig);
+      const link = shareLink(meP.social?.handle);
       await studio.hold(3000, k => { const gr = g.createLinearGradient(0, 0, 0, VH); gr.addColorStop(0, '#111827'); gr.addColorStop(1, '#7c3aed'); g.fillStyle = gr; g.fillRect(0, 0, VW, VH);
         g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = '900 96px system-ui, sans-serif'; g.fillText('SCRAM', VW / 2, 430); g.font = '700 54px system-ui, sans-serif'; g.fillStyle = '#fde047'; g.fillText('Play free →', VW / 2, 560);
         g.font = '600 34px system-ui, sans-serif'; g.fillStyle = '#fff'; g.fillText(link.replace(/^https?:\/\//, ''), VW / 2, 625);
-        g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#f472b6'; g.fillText(`Game by @${window.CREATOR_IG || 'mmmmmray'}`, VW / 2, 820); if (meP.ig) { g.fillStyle = '#fff'; g.fillText('@' + meP.ig, VW / 2, 880); } g.textAlign = 'left'; });
+        g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#f472b6'; g.fillText(credit(), VW / 2, 820); if (meP.social) { g.fillStyle = '#fff'; g.fillText(tag(meP.social), VW / 2, 880); } g.textAlign = 'left'; });
       const blob = await full.stop(); studio.close(); urls.forEach(u => u && URL.revokeObjectURL(u));
       if (viralOut) URL.revokeObjectURL(viralOut.url);
       viralOut = { blob, url: URL.createObjectURL(blob), durMs: performance.now() - t0, w: VW, h: VH, cuts: plan.length, size: blob.size, name: `scram_viral_${R.code}_${meP.name.replace(/\W/g, '')}.webm`, link, music: !!mus, first: plan[0].caption };
@@ -294,5 +295,5 @@
     $('btnGroupSave').onclick = () => saveOrShare(group, false); $('btnGroupShare').onclick = () => saveOrShare(group, true);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
-  window.Reel = { viral, get viralOut() { return viralOut; }, shareLink, buildMine, buildGroup, onMsg, clear, moments, cutsFor, get my() { return my; }, get group() { return group; }, get cuts() { return myCuts; }, get building() { return building; } };
+  window.Reel = { credit, viral, get viralOut() { return viralOut; }, shareLink, buildMine, buildGroup, onMsg, clear, moments, cutsFor, get my() { return my; }, get group() { return group; }, get cuts() { return myCuts; }, get building() { return building; } };
 })();

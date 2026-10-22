@@ -7,8 +7,9 @@ const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const Field = require('./public/field');
 const Recap = require('./public/recap');
+const Socials = require('./public/socials');
 const PU = require('./powerups');
-const { createStats } = require('./stats');
+const { createStats, normHandle } = require('./stats');
 const Admin = require('./admin');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
@@ -75,11 +76,15 @@ function createApp(opts = {}) {
     now, throttleMs: opts.statsThrottleMs ?? 5000, maxGames: Math.round(clampNum0(env.MAX_GAMES, 0, 100000, 50)) });
   const liveCounts = () => { let games = 0, playing = 0, players = 0, online = 0; for (const L of lobbies.values()) { if (L.state === 'ended') continue; games++; if (L.state === 'playing' || L.state === 'hiding') playing++;
     for (const p of L.players.values()) { players++; if (p.ws) online++; } } return { games, playing, players, online }; };
-  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = Recap.igHandle(req.query.ref); if (h) { refs.set(h, (refs.get(h) || 0) + 1); stats.visit(h); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
+  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = normHandle(String(req.query.ref || '')); if (h) { refs.set(h, (refs.get(h) || 0) + 1); stats.visit(h); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
   const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
     return /^https?:/i.test(base) ? u.toString() : u.pathname + u.search; };
-  app.get('/play', (req, res) => { stats.playClick(); res.redirect(302, playTarget({ ref: Recap.igHandle(req.query.ref) })); });
-  app.get('/p/:code', (req, res) => res.redirect(302, playTarget({ code: String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), ref: Recap.igHandle(req.query.ref) })));
+  app.get('/play', (req, res) => { stats.playClick(); res.redirect(302, playTarget({ ref: normHandle(String(req.query.ref || '')) })); });
+  app.get('/p/:code', (req, res) => res.redirect(302, playTarget({ code: String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), ref: normHandle(String(req.query.ref || '')) })));
+  // creator credit: CREATOR_HANDLE + CREATOR_PLATFORM (legacy CREATOR_IG = an Instagram handle); default @mmmmmray on Instagram
+  const CREATOR = Socials.norm({ handle: env.CREATOR_HANDLE || env.CREATOR_IG || 'mmmmmray', platform: env.CREATOR_HANDLE ? (env.CREATOR_PLATFORM || 'instagram').toLowerCase() : 'instagram' })
+    || { handle: 'mmmmmray', platform: 'instagram' };
+  app.get('/config.js', (req, res) => res.type('application/javascript').set('Cache-Control', 'no-cache').send(`window.CREATOR=${JSON.stringify({ ...CREATOR, url: Socials.url(CREATOR) })};`));
   Admin.mount(app, { env, stats, liveCounts });
   app.post('/api/share', express.json({ limit: '1kb' }), (req, res) => { stats.share(String(req.body?.k || '')); res.status(204).end(); });
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
@@ -119,10 +124,12 @@ function createApp(opts = {}) {
   }
 
   function applyMode(st, mode) { const M = MODES[mode]; if (!M) return; st.mode = mode; if (M.features) { st.features = { ...M.features }; st.powerups = M.powerups; } }
-  function addPlayer(L, name, ig) {
+  // {social:{handle,platform}} or legacy {ig, platform?} -> normalized social or null
+  const socialIn = m => Socials.norm(m.social && typeof m.social === 'object' ? m.social : { handle: m.ig, platform: m.platform });
+  function addPlayer(L, name, social) {
     const p = { id: rid(6), token: rid(16), name: String(name || 'Player').trim().slice(0, 20) || 'Player',
       role: 'hider', caught: false, caughtAt: 0, ws: null, loc: null, perm: 'unknown', connected: false, revealedAt: 0,
-      cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, held: null, lastUse: 0, pickup: null, silent: false, shieldUntil: 0, radarUntil: 0, houndUntil: 0, used: 0, ig: Recap.igHandle(ig) };
+      cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, held: null, lastUse: 0, pickup: null, silent: false, shieldUntil: 0, radarUntil: 0, houndUntil: 0, used: 0, social: social || null };
     if (!L.hostId) { L.hostId = p.id; p.role = 'hunter'; }
     L.players.set(p.id, p);
     return p;
@@ -140,7 +147,7 @@ function createApp(opts = {}) {
       const o = { id: p.id, name: p.name, role: p.role, caught: p.caught, caughtAt: p.caughtAt, connected: p.connected, perm: p.perm,
         host: p.id === L.hostId, cam: p.cam, acc: p.loc ? Math.round(p.loc.acc) : null,
         stale: !p.loc || (t - p.loc.recvAt) > STALE_MS, out: outFlag(L, p) };
-      if (p.ig && (L.state === 'lobby' || ended)) o.ig = p.ig; // handles: lobby + recap only, never during a game // in/out flag only, never coords
+      if (p.social && (L.state === 'lobby' || ended)) o.social = p.social; // handles: lobby + recap only, never during a game // in/out flag only, never coords
       const canSeeLive = p.id === me.id ||
         (isHunter(me) && isHunter(p) && L.state !== 'lobby') ||
         (L.settings.teammates && me.role === 'hider' && !me.caught && p.role === 'hider' && !p.caught && running(L)) || // hider teammates: uncaught hiders only, never hunters/spectators
@@ -203,7 +210,7 @@ function createApp(opts = {}) {
   function buildRecap(L) {
     if (L.state !== 'ended') return null;
     if (L.recapCache) return L.recapCache;
-    const players = [...L.players.values()].map(p => ({ id: p.id, name: p.name, startRole: p.startRole || p.role, role: p.role, caught: p.caught, caughtAt: p.caughtAt, caughtBy: p.caughtBy || null, ig: p.ig || null }));
+    const players = [...L.players.values()].map(p => ({ id: p.id, name: p.name, startRole: p.startRole || p.role, role: p.role, caught: p.caught, caughtAt: p.caughtAt, caughtBy: p.caughtBy || null, social: p.social || null }));
     const photos = Object.fromEntries(Object.entries(L.photos).filter(([, ph]) => ph.data).map(([id, ph]) => [id, { name: ph.name, data: ph.data, t: ph.t }]));
     const R0 = { code: L.code, round: L.round, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, endedAt: L.endedAt, winner: L.winner,
       players, trails: L.trails, log: [...L.log], photos, field: L.field };
@@ -551,16 +558,16 @@ function createApp(opts = {}) {
       let m; try { m = JSON.parse(raw); } catch { return; }
       if (!me) {
         if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
-        const dev = typeof m.dev === 'string' ? m.dev : null, ref = Recap.igHandle(m.ref || '') || null;
+        const dev = typeof m.dev === 'string' ? m.dev : null, ref = normHandle(String(m.ref || '')) || null, social = socialIn(m);
         if (m.type === 'create') {
           if (stats.canCreate(liveCounts().games)) return send(ws, { type: 'error', error: BUSY_MSG, busy: true });
-          L = newLobby(); me = addPlayer(L, m.name, m.ig); stats.gameCreated(dev, ref); if (me.ig) stats.handle(me.ig, { ref });
+          L = newLobby(); me = addPlayer(L, m.name, social); stats.gameCreated(dev, ref); if (me.social) stats.handle(me.social, { ref });
         }
         else if (m.type === 'join') {
           L = lobbies.get(String(m.code || '').toUpperCase());
           if (!L) return send(ws, { type: 'error', error: 'Lobby not found' });
           if (L.players.size >= MAX_PLAYERS) { const n = L.players.size; L = null; return send(ws, { type: 'error', error: `Lobby is full (${n}/${MAX_PLAYERS})`, full: true }); }
-          me = addPlayer(L, m.name, m.ig); stats.player(dev, ref); if (me.ig) stats.handle(me.ig, { ref });
+          me = addPlayer(L, m.name, social); stats.player(dev, ref); if (me.social) stats.handle(me.social, { ref });
           if (L.state === 'playing' || L.state === 'hiding') me.role = 'hunter'; // late joiners hunt (can't be fairly hidden)
         } else if (m.type === 'rejoin') {
           L = lobbies.get(String(m.code || '').toUpperCase());
@@ -596,7 +603,7 @@ function createApp(opts = {}) {
           else send(ws, viewFor(L, me));
           break;
         }
-        case 'ig': me.ig = Recap.igHandle(m.ig); if (me.ig) stats.handle(me.ig); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
+        case 'ig': case 'social': me.social = socialIn(m); L.recapCache = null; if (me.social) stats.handle(me.social); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
         case 'perm': me.perm = ['granted', 'denied', 'prompt', 'unsupported', 'error'].includes(m.perm) ? m.perm : 'unknown'; broadcast(L); break;
         case 'settings': if (host && L.state === 'lobby') {
           const s = m.settings || {};
@@ -632,7 +639,7 @@ function createApp(opts = {}) {
             const outside = ps.filter(p => !p.loc || !Field.inField(L.field, p.loc)).map(p => ({ id: p.id, name: p.name, noGps: !p.loc }));
             if (outside.length) return send(ws, { type: 'startBlocked', outside });
           }
-          const t = now(); L.startedAt = t; stats.gameStarted(); for (const p of L.players.values()) if (p.ig) stats.handle(p.ig, { played: true }); L.hideEndsAt = t + L.settings.hideSec * 1000;
+          const t = now(); L.startedAt = t; stats.gameStarted(); for (const p of L.players.values()) if (p.social) stats.handle(p.social, { played: true }); L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
           L.chimeTest = null;
           L.state = L.settings.hideSec > 0 ? 'hiding' : 'playing'; L.round++; L.pings = []; L.events = [];

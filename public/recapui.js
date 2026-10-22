@@ -24,7 +24,7 @@
     $('rScrub').max = D; $('rScrub').value = t - R.startedAt;
     $('awards').innerHTML = R.awards.map(a => `<div class="award" data-award="${a.key}"><span style="font-size:1.6em">${a.icon}</span><div><b>${esc(a.title)}</b>${esc(a.text)}</div></div>`).join('') || '<p class="note">No awards this round.</p>';
     $('trophies').innerHTML = R.trophies.map(x => `<span class="trophy" title="${esc(x.desc)}" data-trophy="${x.key}">${x.icon} ${esc(x.title)} · ${esc(x.name)}</span>`).join('') || '<p class="note">No trophies this round.</p>';
-    const ig = p => p.ig ? ` <a class="ig" href="https://www.instagram.com/${encodeURIComponent(p.ig)}/" target="_blank" rel="noopener">@${esc(p.ig)}</a>` : '';
+    const ig = p => p.social && window.igLink ? ' ' + window.igLink(p.social) : '';
     $('timeline').innerHTML = `<li class="note">${R.players.map(p => `<span style="color:${col[p.id]}">●</span> ${esc(p.name)}${ig(p)}`).join(' · ')}</li>` +
       R.log.map(e => `<li class="${e.k}" data-t="${e.t}"><span class="mono">${clk(e.t - R.startedAt)}</span>${esc(e.text)}</li>`).join('');
     for (const li of document.querySelectorAll('#timeline li[data-t]')) li.onclick = () => { stop(); seek(+li.dataset.t); };
@@ -119,16 +119,16 @@
       g.textAlign = 'left'; g.textBaseline = 'alphabetic';
     }
     g.restore();
-    // legend (names + opted-in instagram handles)
+    // legend (names + opted-in social handles, with the platform name)
     let y = 870; g.font = '28px system-ui, sans-serif'; let x = 48;
-    for (const p of R.players) { const label = `${p.name}${p.ig ? ' @' + p.ig : ''}`, w = g.measureText(label).width + 50; if (x + w > W - 40) { x = 48; y += 40; }
+    for (const p of R.players) { const label = `${p.name}${p.social ? ` @${p.social.handle} (${Socials.label(p.social.platform)})` : ''}`, w = g.measureText(label).width + 50; if (x + w > W - 40) { x = 48; y += 40; }
       g.fillStyle = col[p.id]; g.beginPath(); g.arc(x + 12, y - 9, 11, 0, 7); g.fill(); g.fillStyle = '#e5e7eb'; g.fillText(label, x + 30, y); x += w; }
     y += 56; g.fillStyle = '#fff'; g.font = '700 34px system-ui, sans-serif'; g.fillText('🏅 Awards', 48, y); y += 10; g.font = '28px system-ui, sans-serif';
     for (const a of R.awards.slice(0, 7)) { y += 40; g.fillStyle = '#fbbf24'; g.fillText(`${a.icon} ${a.title}`, 48, y); g.fillStyle = '#e5e7eb'; g.fillText(a.text.slice(0, 46), 430, y); }
     y += 58; x = 48; g.font = '26px system-ui, sans-serif';
     for (const tr of R.trophies.slice(0, 10)) { const label = `${tr.icon} ${tr.title} · ${tr.name}`, w = g.measureText(label).width + 28; if (x + w > W - 40) { x = 48; y += 48; } if (y > H - 70) break;
       g.fillStyle = '#312e81'; roundRect(g, x, y - 30, w, 42, 21); g.fill(); g.fillStyle = '#fff'; g.fillText(label, x + 14, y); x += w + 10; }
-    g.font = '600 26px system-ui, sans-serif'; g.fillStyle = '#f472b6'; g.textAlign = 'right'; g.fillText(`Game by @${window.CREATOR_IG || 'mmmmmray'}`, W - 32, H - 28); g.textAlign = 'left';
+    g.font = '600 26px system-ui, sans-serif'; g.fillStyle = '#f472b6'; g.textAlign = 'right'; g.fillText(window.Reel?.credit?.() || 'Game by @mmmmmray', W - 32, H - 28); g.textAlign = 'left';
     g.fillStyle = '#6b7280'; g.font = '22px system-ui, sans-serif'; g.fillText('scram · GPS hide & seek', 48, H - 28);
     return c;
   }

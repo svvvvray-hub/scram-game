@@ -112,53 +112,92 @@ test('stats persist to STATS_FILE with throttled writes, settings survive restar
   assert.strictEqual(s2.canCreate(0), 'paused');
 });
 
-test('stats.handle: normalize, validate, dedupe, first/last seen, games, ref', () => {
+test('stats.handle: normalize, validate per platform, dedupe by platform+handle, first/last seen, games, ref', () => {
   let t = Date.UTC(2026, 0, 1); const s = createStats({ file: null, now: () => t });
-  assert.strictEqual(s.handle('@Murray.Hunts', { ref: 'Lena' }), 'murray.hunts');
-  for (const bad of ['', '@', 'has space', 'bad-dash', 'a'.repeat(31), '<script>', 'ü', null, 42]) assert.strictEqual(s.handle(bad), null, String(bad));
+  assert.strictEqual(s.handle('@Murray.Hunts', { ref: 'Lena' }), 'murray.hunts'); // legacy string = Instagram
+  for (const bad of ['', '@', 'has space', 'bad-dash', 'a'.repeat(31), '<script>', 'ü', null, 42, { handle: 'x', platform: 'myspace' }, { handle: 'ab', platform: 'facebook' }]) assert.strictEqual(s.handle(bad), null, JSON.stringify(bad));
   assert.strictEqual(s.handle('a'.repeat(30)), 'a'.repeat(30));
-  t += 3600e3; s.handle('murray.hunts', { played: true, ref: 'other' }); s.handle('MURRAY.HUNTS', { played: true });
-  const r = s.data().handles['murray.hunts'];
-  assert.deepStrictEqual(r, { first: '2026-01-01T00:00:00.000Z', last: '2026-01-01T01:00:00.000Z', games: 2, ref: 'lena' });
-  assert.strictEqual(Object.keys(s.data().handles).length, 2);
-  assert.deepStrictEqual(s.handleList('games').map(h => h.handle), ['murray.hunts', 'a'.repeat(30)]);
-  assert.strictEqual(s.summary({}).handleCount, 2);
+  t += 3600e3; s.handle({ handle: 'murray.hunts', platform: 'instagram' }, { played: true, ref: 'other' }); s.handle('MURRAY.HUNTS', { played: true });
+  s.handle({ handle: '@Murray.Hunts', platform: 'tiktok' }); // same handle, other platform = separate row
+  const r = s.data().handles['instagram:murray.hunts'];
+  assert.deepStrictEqual(r, { handle: 'murray.hunts', platform: 'instagram', first: '2026-01-01T00:00:00.000Z', last: '2026-01-01T01:00:00.000Z', games: 2, ref: 'lena' });
+  assert.strictEqual(Object.keys(s.data().handles).length, 3);
+  assert.deepStrictEqual(s.handleList('games').map(h => h.platform + ':' + h.handle), ['instagram:murray.hunts', 'tiktok:murray.hunts', 'instagram:' + 'a'.repeat(30)]);
+  assert.deepStrictEqual(s.handleList('last', 'tiktok').map(h => h.url), ['https://www.tiktok.com/@murray.hunts']);
+  assert.strictEqual(s.summary({}).handleCount, 3); assert.deepStrictEqual(s.summary({}).platformCounts, { instagram: 2, tiktok: 1 });
+  // X keeps display case but dedupes case-insensitively
+  s.handle({ handle: 'Jack_B', platform: 'x' }); s.handle({ handle: 'JACK_b', platform: 'x' }); assert.strictEqual(s.handleList('last', 'x').length, 1);
+  assert.strictEqual(s.deleteHandle('tiktok', 'Murray.Hunts'), true); assert.strictEqual(s.deleteHandle('tiktok', 'murray.hunts'), false);
+  assert.ok(s.data().handles['instagram:murray.hunts'], 'delete is per platform');
 });
 
-test('instagram handles: recorded from players, admin-only (dashboard, stats.json, csv), never on public endpoints', async () => {
+test('stats migrate saved Instagram-only handles (no platform = instagram)', () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lp-')), 'stats.json');
+  fs.writeFileSync(f, JSON.stringify({ v: 1, handles: { 'old.one': { first: '2026-01-01T00:00:00.000Z', last: '2026-01-02T00:00:00.000Z', games: 3, ref: 'x' } } }));
+  const s = createStats({ file: f });
+  assert.deepStrictEqual(s.data().handles, { 'instagram:old.one': { handle: 'old.one', platform: 'instagram', first: '2026-01-01T00:00:00.000Z', last: '2026-01-02T00:00:00.000Z', games: 3, ref: 'x' } });
+  s.handle({ handle: 'old.one', platform: 'instagram' }, { played: true }); assert.strictEqual(Object.keys(s.data().handles).length, 1); assert.strictEqual(s.data().handles['instagram:old.one'].games, 4);
+});
+
+test('social handles: recorded from players, admin-only (dashboard, stats.json, csv), never on public endpoints; delete', async () => {
   const a = await boot();
   try {
-    const h = await act(a, 'create', { dev: 'd1', ig: '@Host_IG', ref: 'murray' });
-    const j = await act(a, 'join', { code: h.joined.code, dev: 'd2', ig: 'https://instagram.com/joiner.one' });
+    const h = await act(a, 'create', { dev: 'd1', ig: '@Host_IG', ref: 'murray' }); // legacy client: ig string = Instagram
+    const j = await act(a, 'join', { code: h.joined.code, dev: 'd2', social: { handle: 'https://www.tiktok.com/@Joiner.One', platform: 'instagram' } }); // URL picks TikTok
     const k = await act(a, 'join', { code: h.joined.code, dev: 'd3' }); // no handle
-    k.send({ type: 'ig', ig: 'bad handle!' }); // invalid -> not recorded
-    await sleep(50); h.send({ type: 'start' }); await until(() => a.stats.data().handles.host_ig?.games === 1);
+    k.send({ type: 'social', social: { handle: 'bad handle!', platform: 'x' } }); // invalid -> not recorded
+    const x = await act(a, 'join', { code: h.joined.code, dev: 'd4', social: { handle: '@Snap.Pal', platform: 'snapchat' } });
+    await sleep(50); h.send({ type: 'start' }); await until(() => a.stats.data().handles['instagram:host_ig']?.games === 1);
     const hs = a.stats.data().handles;
-    assert.deepStrictEqual(Object.keys(hs).sort(), ['host_ig', 'joiner.one']);
-    assert.strictEqual(hs.host_ig.ref, 'murray'); assert.strictEqual(hs['joiner.one'].games, 1); assert.strictEqual(hs['joiner.one'].ref, null);
+    assert.deepStrictEqual(Object.keys(hs).sort(), ['instagram:host_ig', 'snapchat:snap.pal', 'tiktok:joiner.one']);
+    assert.strictEqual(hs['instagram:host_ig'].ref, 'murray'); assert.strictEqual(hs['tiktok:joiner.one'].games, 1); assert.strictEqual(hs['tiktok:joiner.one'].ref, null);
     // auth required
-    assert.strictEqual((await fetch(a.base + '/admin/handles.csv')).status, 401);
-    assert.strictEqual((await fetch(a.base + '/admin/handles.csv?key=nope')).status, 401);
+    for (const p of ['/admin/handles.csv', '/admin/socials.csv', '/admin/handles.csv?key=nope']) assert.strictEqual((await fetch(a.base + p)).status, 401, p);
     assert.strictEqual((await fetch(a.base + '/admin/stats.json')).status, 401);
     const csvR = await fetch(a.base + '/admin/handles.csv?key=sekret-123'); assert.strictEqual(csvR.status, 200);
     assert.match(csvR.headers.get('content-type'), /text\/csv/); assert.match(csvR.headers.get('content-disposition'), /attachment/);
-    const csv = await csvR.text(); assert.match(csv, /^handle,profile_url,first_seen,last_seen,games,ref\r\n/);
-    assert.match(csv, /host_ig,https:\/\/www\.instagram\.com\/host_ig,[^,]+,[^,]+,1,murray/);
+    const csv = await csvR.text(); assert.match(csv, /^handle,platform,profile_url,first_seen,last_seen,games,ref\r\n/);
+    assert.match(csv, /host_ig,instagram,https:\/\/www\.instagram\.com\/host_ig\/,[^,]+,[^,]+,1,murray/);
+    assert.match(csv, /joiner\.one,tiktok,https:\/\/www\.tiktok\.com\/@joiner\.one,/); assert.match(csv, /snap\.pal,snapchat,https:\/\/www\.snapchat\.com\/add\/snap\.pal,/);
+    const tk = await (await fetch(a.base + '/admin/socials.csv?key=sekret-123&platform=tiktok')).text(); assert.strictEqual(tk.trim().split('\r\n').length, 2); assert.match(tk, /joiner\.one/);
     const s = await (await fetch(a.base + '/admin/stats.json?key=sekret-123')).json();
-    assert.strictEqual(s.handleCount, 2); assert.ok(s.handles.some(x => x.handle === 'joiner.one' && x.games === 1));
+    assert.strictEqual(s.handleCount, 3); assert.ok(s.handles.some(x => x.handle === 'joiner.one' && x.platform === 'tiktok' && x.games === 1));
+    assert.deepStrictEqual(s.platformCounts, { instagram: 1, tiktok: 1, snapchat: 1 });
     const ck = (await fetch(a.base + '/admin?key=sekret-123', { redirect: 'manual' })).headers.get('set-cookie').split(';')[0];
     const html = await (await fetch(a.base + '/admin', { headers: { cookie: ck } })).text();
     const g = await (await fetch(a.base + '/admin?sort=games', { headers: { cookie: ck } })).text(); assert.match(g, /Games ▼/);
     assert.strictEqual((await fetch(a.base + '/admin/handles.csv', { headers: { cookie: ck } })).status, 200, 'cookie auth works for csv');
-    assert.match(html, /Players with Instagram/); assert.match(html, /href="https:\/\/www\.instagram\.com\/host_ig"/); assert.match(html, /\/admin\/handles\.csv/);
-    const byGames = await (await fetch(a.base + '/admin?sort=games', { headers: { cookie: 'x=1' } })).status; assert.strictEqual(byGames, 401);
+    assert.match(html, /Players' socials/); assert.ok(!/Players with Instagram/.test(html));
+    assert.match(html, /href="https:\/\/www\.instagram\.com\/host_ig\/"/); assert.match(html, /href="https:\/\/www\.tiktok\.com\/@joiner\.one"/); assert.match(html, /\/admin\/socials\.csv/);
+    assert.match(html, /<th>Platform<\/th>/); assert.match(html, /id="platformFilter"/); assert.match(html, /data-platform="tiktok" class="pill off"[^>]*>.*?TikTok <span class="pc">1<\/span>/);
+    const only = await (await fetch(a.base + '/admin?platform=snapchat', { headers: { cookie: ck } })).text();
+    assert.match(only, /snap\.pal/); assert.ok(!/joiner\.one<\/a>/.test(only) && !/host_ig<\/a>/.test(only), 'platform filter');
+    assert.strictEqual((await fetch(a.base + '/admin?sort=games', { headers: { cookie: 'x=1' } })).status, 401);
+    // delete: authenticated POST only
+    assert.strictEqual((await post(a, '/admin/handles/delete', { platform: 'tiktok', handle: 'joiner.one' })).status, 401);
+    assert.ok(a.stats.data().handles['tiktok:joiner.one']);
+    const d = await post(a, '/admin/handles/delete', { platform: 'tiktok', handle: 'joiner.one' }, { cookie: ck }); assert.strictEqual(d.status, 200); assert.deepStrictEqual(await d.json(), { ok: true });
+    assert.ok(!a.stats.data().handles['tiktok:joiner.one']); assert.strictEqual((await post(a, '/admin/handles/delete', { platform: 'tiktok', handle: 'joiner.one' }, { cookie: ck })).status, 404);
+    const fd = await fetch(a.base + '/admin/handles/delete', { method: 'POST', redirect: 'manual', headers: { cookie: ck, 'content-type': 'application/x-www-form-urlencoded' }, body: 'platform=snapchat&handle=snap.pal' });
+    assert.strictEqual(fd.status, 303); assert.match(fd.headers.get('location'), /deleted=1/); assert.strictEqual(a.stats.summary({}).handleCount, 1);
+    assert.match(html, /action="\/admin\/handles\/delete"/); assert.match(html, /confirm\(/);
     // public endpoints never expose saved handles
-    for (const p of ['/', '/privacy', '/play', '/api/share', '/admin/handles.csv?key=']) { const r = await fetch(a.base + p, { redirect: 'manual' }); const t = await r.text(); assert.ok(!/host_ig|joiner\.one/i.test(t), p); }
+    for (const p of ['/', '/privacy', '/play', '/api/share', '/config.js', '/admin/handles.csv?key=']) { const r = await fetch(a.base + p, { redirect: 'manual' }); const t = await r.text(); assert.ok(!/host_ig|joiner\.one|snap\.pal/i.test(t), p); }
+    [h, j, k, x].forEach(c => c.ws.close());
   } finally { a.server.close(); }
+});
+
+test('creator credit: CREATOR_HANDLE + CREATOR_PLATFORM, CREATOR_IG fallback, default @mmmmmray on Instagram', async () => {
+  const cfg = async env => { const a = await boot(env); try { const t = await (await fetch(a.base + '/config.js')).text(); return JSON.parse(t.replace(/^window\.CREATOR=/, '').replace(/;$/, '')); } finally { a.server.close(); } };
+  assert.deepStrictEqual(await cfg({}), { handle: 'mmmmmray', platform: 'instagram', url: 'https://www.instagram.com/mmmmmray/' });
+  assert.deepStrictEqual(await cfg({ CREATOR_IG: 'old.ig' }), { handle: 'old.ig', platform: 'instagram', url: 'https://www.instagram.com/old.ig/' });
+  assert.deepStrictEqual(await cfg({ CREATOR_HANDLE: '@Ray', CREATOR_PLATFORM: 'TikTok', CREATOR_IG: 'ignored' }), { handle: 'ray', platform: 'tiktok', url: 'https://www.tiktok.com/@ray' });
+  assert.deepStrictEqual(await cfg({ CREATOR_HANDLE: 'RayX', CREATOR_PLATFORM: 'x' }), { handle: 'RayX', platform: 'x', url: 'https://x.com/RayX' });
+  assert.strictEqual((await cfg({ CREATOR_HANDLE: 'bad handle!', CREATOR_PLATFORM: 'x' })).handle, 'mmmmmray');
 });
 
 test('handles persist in STATS_FILE', async () => {
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lp-')), 'stats.json');
-  const s = createStats({ file: f, throttleMs: 10 }); s.handle('keep.me', { ref: 'x' }); s.flush();
-  const s2 = createStats({ file: f }); assert.strictEqual(s2.data().handles['keep.me'].ref, 'x');
+  const s = createStats({ file: f, throttleMs: 10 }); s.handle('keep.me', { ref: 'x' }); s.handle({ handle: 'keep.me', platform: 'youtube' }); s.flush();
+  const s2 = createStats({ file: f }); assert.strictEqual(s2.data().handles['instagram:keep.me'].ref, 'x'); assert.strictEqual(s2.data().handles['youtube:keep.me'].platform, 'youtube');
 });

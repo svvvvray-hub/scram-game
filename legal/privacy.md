@@ -10,8 +10,8 @@ This summary is here to make the policy easier to read. It is not a substitute f
 
 - **No accounts, no database, no tracking cookies.** We run the game in server memory. When a round, lobby, or server ends, that game data is gone.
 - **Your location is the core of the game.** During a game your phone sends your GPS location to our server. Hunters see hiders' locations at each "ping," about every 60 seconds by default. Your location trail is kept in memory for the round so we can show the end-of-round recap. Then it is discarded.
-- **Other players see what you share:** your display name, your Instagram handle if you add one, your role, your in-game status, and some of your location.
-- **Your Instagram handle is saved if you enter one.** It may be viewed by the game creator, for example to connect with players. Leave it blank or ask us to delete it.
+- **Other players see what you share:** your display name, your social media handle (e.g., Instagram, TikTok, X) if you add one, your role, your in-game status, and some of your location.
+- **Your social media handle is saved if you enter one.** It may be viewed by the game creator, for example to connect with players. Leave it blank, or ask us to delete it at any time and we will remove it.
 - **The camera snapshot is opt-in.** If you consent in the lobby, hunters see one photo from your rear camera at minute 10. It is kept in memory for that round only.
 - **Your video stays on your phone** unless you tap "Send my highlights to host." Then short highlight cuts go to the server and are kept in memory for **30 minutes at most**.
 - **We do not sell your personal information,** and we don't share it for targeted advertising.
@@ -29,7 +29,7 @@ Last Ping (the "**Game**") is a free, browser-based GPS hide-and-seek game. It i
 | What | When | Who sees it | How long we keep it |
 |---|---|---|---|
 | **Display name** | You type it to create or join a lobby | Everyone in your lobby | Server memory until you leave or the lobby closes |
-| **Instagram handle** (optional) | You add it when joining | Everyone in your lobby (shown as a link to your profile); may appear in recaps and shared links. Also saved for the game creator, who may view it, for example to connect with players | Kept until you ask us to delete it |
+| **Social media handle** (optional; e.g., Instagram, TikTok, X, Snapchat, YouTube, Threads, Facebook) | You add it, and pick the platform, when joining | Everyone in your lobby (shown as a link to your profile); may appear in recaps and shared links. Also saved for the game creator, who may view it, for example to connect with players | Kept until you ask us to delete it |
 | **Lobby code and a random session token** | When you join | The token is used only by your browser and our server, to reconnect you | Server memory while the lobby exists; on your device until you leave the lobby |
 | **Live GPS location** (latitude, longitude, accuracy) | During a game, sent repeatedly (roughly every few seconds while moving, at least every ~15 s) | See section 3 | Server memory for the round |
 | **Location trail** | Built from the location pings during a round | Players in your lobby, in the end-of-round recap | Until **Play again**, the lobby closes, or the server restarts |
@@ -41,7 +41,7 @@ Last Ping (the "**Game**") is a free, browser-based GPS hide-and-seek game. It i
 
 We **do not** collect your real name, email address, phone number, contacts, or payment information. We do not ask for them, and we have no account system.
 
-**Your device.** The Game saves a few items in your browser's **localStorage** so you don't have to retype them: your display name, Instagram handle, camera-consent choice, settings, and your current lobby session. Some layout preferences are saved in **sessionStorage**. These items stay on your device. Leaving a lobby removes the lobby session. To remove everything else, clear this site's data in your browser settings. **We do not use cookies.** We use no advertising or analytics trackers.
+**Your device.** The Game saves a few items in your browser's **localStorage** so you don't have to retype them: your display name, social media handle and platform, camera-consent choice, settings, and your current lobby session. Some layout preferences are saved in **sessionStorage**. These items stay on your device. Leaving a lobby removes the lobby session. To remove everything else, clear this site's data in your browser settings. **We do not use cookies.** We use no advertising or analytics trackers.
 
 ## 3. How location sharing works
 
@@ -71,7 +71,7 @@ We do not use your location or other data for advertising, profiling, or any pur
 - **Service providers.** These process data on our behalf so the Game can run:
   - **Render** (render.com) hosts our server in the United States. It processes the traffic and server logs (see section 6).
   - **OpenStreetMap** map tiles are loaded directly by your browser from OpenStreetMap servers. Those servers receive your IP address and the map area being viewed, as with any website request. See the OpenStreetMap Foundation's privacy policy.
-  - **Instagram (Meta):** if you tap a player's handle or "Follow," you leave the Game and go to Instagram, where Instagram's policies apply.
+  - **Social media platforms (e.g., Instagram, TikTok, X):** if you tap a player's handle or "Follow," you leave the Game and go to that platform, where its own privacy policy applies.
 - **Legal reasons:** we may disclose information if the law requires it, or to protect someone's safety. Because we keep almost nothing, we usually have nothing to disclose.
 - **Business transfer:** if the Game is transferred to a new owner or entity, this policy will continue to apply to any information transferred.
 
@@ -83,7 +83,7 @@ Like most websites, our server and our hosting provider automatically handle tec
 
 ## 7. How long we keep information
 
-The Game has **no database**. Apart from saved Instagram handles (see below), all game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:
+The Game has **no database**. Apart from saved social media handles (see below), all game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:
 
 - **at "Play again"** (trails, catches, photos, recaps, and highlights from the previous round are wiped);
 - **when you leave the lobby** (your player entry is removed);
@@ -91,13 +91,13 @@ The Game has **no database**. Apart from saved Instagram handles (see below), al
 - **when the server restarts or sleeps**, which on our free hosting can happen after a period of inactivity; and
 - **for highlight cuts, after 30 minutes at most.**
 
-**Instagram handles.** If you enter an Instagram handle, it is saved (with when we first and last saw it, how many games you played, and the invite tag that brought you, if any) and may be viewed by the game creator, for example to connect with players. You can leave the field blank, or ask us to delete your saved handle by contacting us (see the Contact section).
+**Social media handles.** If you enter a social media handle (e.g., Instagram, TikTok, X), it is saved together with the platform you picked (with when we first and last saw it, how many games you played, and the invite tag that brought you, if any) and may be viewed by the game creator, for example to connect with players. You can leave the field blank, or ask us to delete your saved handle by contacting us (see the Contact section).
 
 Referral visit counts are kept in memory until the server restarts. Server logs are kept as described in section 6.
 
 ## 8. Your choices
 
-- Use any display name you like (within our conduct rules), and leave the Instagram field blank if you prefer. If you entered a handle, you can ask us to delete it.
+- Use any display name you like (within our conduct rules), and leave the "Your @" field blank if you prefer. If you entered a handle, you can ask us to delete it.
 - Tap **"Ready without camera"** to opt out of the camera snapshot.
 - Keep your videos on your device. Don't tap "Send my highlights to host."
 - Deny or revoke location, camera, or microphone permissions in your browser settings. Some features won't work without them.
@@ -109,7 +109,7 @@ If you are a California resident, the California Consumer Privacy Act, as amende
 
 **Categories of personal information we handle (past 12 months):**
 
-- **identifiers**: display name, Instagram handle, IP address, and session token;
+- **identifiers**: display name, social media handle, IP address, and session token;
 - **geolocation data**: **precise geolocation**, which is "sensitive personal information" under the CCPA;
 - **audio, electronic, and visual information**: the optional camera snapshot and optional highlight cuts; and
 - **internet or network activity**: server logs and referral visits.
