@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: scram-game
+    name: lastping
     runtime: node
     plan: free
     autoDeploy: true
