@@ -58,14 +58,47 @@ Timings below are for a 20-min game and **scale with game length** (`scale = gam
 from 1:48), or type any game length (e.g. 1 min), or start the server with `GAME_MIN=2 node server.js` to change
 the default length.
 
+
+## Playing field (v4) — host picks the boundary in the lobby
+Under **Playing field** in the lobby the host chooses (everyone else sees the result on a lobby map):
+- **No boundary** (default) — same as before, play anywhere.
+- **Radius preset** — 0.25 mi (402 m), 0.5 mi (805 m) or 1 mi (1609 m) circle, centered on the host's GPS. Drag the
+  📍 pin to move it, or tap **📍 Center on me**.
+- **✏️ Draw shape** — tap the map to drop corners (touch-friendly; double-tap zoom is off so fast taps add points),
+  **↩ Undo point**, **Clear**, **✅ Finish** (3–50 points). **Remove shape** / **Redraw shape** afterwards.
+- Circle **and** shape together → the field is the **intersection** (inside both). The server rejects shapes that
+  don't overlap the circle.
+
+Server (`public/field.js`, shared by server and browser): validates the field (circle radius 50–5000 m; polygon
+3–50 points, |lat| ≤ 85, |lng| ≤ 180, 20 m–20 km across; non-empty intersection), stores it on the lobby and
+broadcasts it. Only the host can change it, in the waiting room or on the end screen; it **persists across Play
+again** and can be edited between rounds. All maps (lobby, in-game, end summary) draw a yellow outline and darken
+everything outside.
+- **Start:** if any player is outside (or has no GPS fix), the host gets "Outside the playing field: Bob… Start
+  anyway?" — OK force-starts, Cancel keeps the lobby. The lobby list shows an "outside field" pill.
+- **During the game** the server checks every GPS fix (each tick). A player outside gets a red pulsing
+  **OUT OF BOUNDS** banner + `navigator.vibrate` (repeats every 10 s while outside; no vibration on iOS), and
+  their map zooms out to show the field. Everyone sees "⚠️ Name is out of bounds" (an in/out flag only —
+  never coordinates).
+- **Penalty:** a hider who stays outside for **30 s** (scaled with game length like the power-ups:
+  `30 s × gameMin/20`, minimum 2 s; e.g. 3 s in the 2-min quick test) is flagged ("revealed at the next ping")
+  and the next ping — scheduled or bounty — shows hunters their **true** position, ignoring an armed ghost decoy
+  or bounty wipe (those stay saved for a later ping). Walking back in clears the flag. Hunters only get the
+  warning. During head start a hider can be out without penalty (warning only); in sudden death there are no map
+  pings, so the penalty is just the warning (the compass already points at them).
+- **Bounties** spawn 50–250 m from the players' centroid, re-rolled until inside the field; if that fails
+  (e.g. everyone is outside), a random point inside the field is used.
+
 ### Tests
 ```
-npm test                                  # 18 unit tests (node:test, fake WebSocket clients + fake GPS)
+npm test                                  # 25 unit tests (node:test, fake WebSocket clients + fake GPS)
 node test/e2e.js http://localhost:3000    # original 3-player browser e2e (rounds, rematch, leave, privacy)
 node test/e2e_features.js http://localhost:3000   # power-ups e2e (fake GPS + fake camera) → shots/*.png
+node test/e2e_field.js http://localhost:3000      # playing-field e2e: 0.25 mi circle + touch-drawn polygon, start prompt, out of bounds
 ```
 Screenshots: `shots/lobby_toggles.png`, `hider_lobby_camera_notice.png`, `hider_decoy.png`, `hider_decoy_used.png`,
-`hunter_bounty.png`, `hunter_cam_peek.png`, `hunter_cam_peek_open.png`, `compass.png`.
+`hunter_bounty.png`, `hunter_cam_peek.png`, `hunter_cam_peek_open.png`, `compass.png`, `field_radius.png`, `field_draw.png`,
+`ingame_boundary.png`, `out_of_bounds.png`.
 
 **Limitations:** camera capture only works with the page open in the foreground (browsers block background
 camera access); iOS needs the camera permission granted in Safari. Chime sound needs the phone not on silent
@@ -76,7 +109,7 @@ desktop browsers show north-up. GPS accuracy (±5–20 m) makes the 15 m claim a
 ```
 npm install
 npm start            # http://localhost:3000 (geolocation needs HTTPS except on localhost)
-npm test             # 18 multi-client tests with fake GPS: ping timing, privacy/no-leak, catching, end, reconnect, TTL
+npm test             # 25 multi-client tests with fake GPS: ping timing, privacy/no-leak, catching, end, reconnect, TTL
 node test/e2e.js URL # headless Chromium, Pixel 7 emulation, 3 players, 2-min game, 10-s pings, writes shots/*.png
 ```
 

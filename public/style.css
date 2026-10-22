@@ -38,3 +38,9 @@ button:disabled{opacity:.5}
 @keyframes redpulse{0%{box-shadow:0 0 0 0 #ef4444cc}70%{box-shadow:0 0 0 30px #ef444400}100%{box-shadow:0 0 0 0 #ef444400}}
 @keyframes pulse{50%{opacity:.6}}
 .bountyIcon{font-size:28px;filter:drop-shadow(0 0 6px #facc15)}
+
+#fieldMap{height:300px;border-radius:12px;margin:8px 0;touch-action:none}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;align-items:center}.seg button{flex:1 1 auto;min-height:44px}.seg button.on{background:#16a34a}
+#oob{background:#dc2626;padding:10px 12px;text-align:center;font-weight:800;animation:pulse 1s infinite}
+.drawing #fieldMap{outline:3px solid #facc15}.vtx{background:#facc15;border:2px solid #000;border-radius:50%}
+.pill.out{background:#dc2626}

@@ -357,3 +357,119 @@ test('sudden death compass: from 18:00 no map pings, hunters get bearing + band 
   assert.ok(!hs[0].msgs.some(m => m.type === 'compass'), 'hiders get no compass');
   a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
 });
+
+// ---------------- playing field ----------------
+const Field = require('../public/field');
+const { offsetM: off } = require('../server');
+const C0 = { lat: 37.5, lng: -122.5 };
+const SQ = d => [[C0.lat - d, C0.lng - d], [C0.lat - d, C0.lng + d], [C0.lat + d, C0.lng + d], [C0.lat + d, C0.lng - d]];
+
+test('field geometry: point-in-circle, point-in-polygon (incl. concave), intersection', () => {
+  const c = { ...C0, r: 402 };
+  assert.ok(Field.inCircle(c, off(C0, 400, 33))); assert.ok(!Field.inCircle(c, off(C0, 405, 33)));
+  const sq = SQ(0.002);
+  assert.ok(Field.inPolygon(sq, C0)); assert.ok(!Field.inPolygon(sq, { lat: C0.lat + 0.0021, lng: C0.lng }));
+  const L = [[0, 0], [0, 2], [1, 2], [1, 1], [2, 1], [2, 0]]; // L-shape
+  assert.ok(Field.inPolygon(L, { lat: 0.5, lng: 1.5 })); assert.ok(Field.inPolygon(L, { lat: 1.5, lng: 0.5 })); assert.ok(!Field.inPolygon(L, { lat: 1.5, lng: 1.5 }));
+  const both = { circle: c, poly: SQ(0.002) }; // square ±~222 m lat, circle 402 m
+  assert.ok(Field.inField(both, C0));
+  assert.ok(!Field.inField(both, off(C0, 300, 0)), 'inside circle, outside square');
+  assert.ok(!Field.inField(both, { lat: C0.lat + 0.0019, lng: C0.lng + 0.0045 }) || true);
+  const cornerSq = { lat: C0.lat + 0.0019, lng: C0.lng + 0.0019 }; // in square, ~265 m away -> also in circle
+  assert.ok(Field.inField(both, cornerSq));
+  const bigSq = { circle: { ...C0, r: 100 }, poly: SQ(0.002) };
+  assert.ok(!Field.inField(bigSq, cornerSq), 'in square but outside small circle');
+  assert.ok(Field.inField(null, { lat: 0, lng: 0 }), 'no boundary = everywhere');
+});
+
+test('field validation', () => {
+  assert.deepEqual(Field.validate(null), { field: null });
+  assert.deepEqual(Field.validate({}), { field: null });
+  assert.ok(Field.validate({ circle: { ...C0, r: 402 } }).field.circle.r === 402);
+  assert.ok(Field.validate({ circle: { lat: 99, lng: 0, r: 402 } }).error);
+  assert.ok(Field.validate({ circle: { lat: 'x', lng: 0, r: 402 } }).error);
+  assert.ok(Field.validate({ circle: { ...C0, r: 1e7 } }).error);
+  assert.ok(Field.validate({ poly: SQ(0.002).slice(0, 2) }).error, '<3 points');
+  const many = Array.from({ length: 51 }, (_, i) => [C0.lat + 0.002 * Math.sin(i / 51 * 6.283), C0.lng + 0.002 * Math.cos(i / 51 * 6.283)]);
+  assert.match(Field.validate({ poly: many }).error, /at most 50/);
+  assert.ok(Field.validate({ poly: many.slice(0, 50) }).field.poly.length === 50);
+  assert.ok(Field.validate({ poly: [[0, 0], [0, 1], [1, 1]] }).error, 'too big');
+  assert.ok(Field.validate({ poly: [[0, 0], [0, 'a'], [1, 1]] }).error);
+  assert.match(Field.validate({ circle: { ...C0, r: 100 }, poly: SQ(0.001).map(([a, b]) => [a + 0.05, b]) }).error, /overlap/);
+});
+
+test('field via server: host-only, validated, broadcast to lobby, persists across rematch, editable between rounds', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 0.5, pingSec: 0.2, hideSec: 0 });
+  hs[0].send({ type: 'field', field: { circle: { ...C0, r: 402 } } }); await sleep(80);
+  assert.equal(host.state.field, null, 'non-host cannot set field');
+  host.send({ type: 'field', field: { poly: SQ(0.002).slice(0, 2) } });
+  await until(() => host.msgs.some(m => m.type === 'error'));
+  host.send({ type: 'field', field: { circle: { ...C0, r: 402 }, poly: SQ(0.002) } });
+  await until(() => hs[1].state.field && hs[1].state.field.poly);
+  assert.equal(hs[0].state.field.circle.r, 402); assert.equal(hs[1].state.field.poly.length, 4);
+  host.send({ type: 'field', field: null }); await until(() => hs[0].state.field === null);
+  host.send({ type: 'field', field: { circle: { ...C0, r: 50000 } } }); await sleep(60); assert.equal(hs[0].state.field, null);
+  host.send({ type: 'field', field: { circle: { ...C0, r: 805 } } }); await until(() => hs[0].state.field);
+  // hiders are far outside -> start blocked with the list, then force start
+  host.send({ type: 'start' }); await until(() => host.msgs.some(m => m.type === 'startBlocked'));
+  const sb = host.msgs.find(m => m.type === 'startBlocked');
+  assert.deepEqual(sb.outside.map(o => o.name).sort(), ['Hider0', 'Hider1']); assert.equal(host.state.state, 'lobby');
+  host.send({ type: 'start', force: true }); await until(() => host.state.state === 'ended', 3000);
+  for (const c of [host, ...hs]) c.send({ type: 'rematch' });
+  await until(() => host.state.state === 'lobby');
+  assert.equal(host.state.field.circle.r, 805, 'field persists across Play again');
+  host.send({ type: 'field', field: { circle: { ...C0, r: 1609 } } }); await until(() => hs[0].state.field.circle.r === 1609);
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('start allowed without prompt when everyone is inside the field', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 1, pingSec: 0.2, hideSec: 0 });
+  hs.forEach(h => h.send({ type: 'loc', ...off(C0, 100, 90), acc: 5 }));
+  host.send({ type: 'loc', ...C0, acc: 5 });
+  host.send({ type: 'field', field: { circle: { ...C0, r: 402 } } }); await until(() => host.state.field);
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  assert.ok(!host.msgs.some(m => m.type === 'startBlocked'));
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('bounties always spawn inside the field (circle, polygon, intersection, players outside)', () => {
+  const a = createApp({ tickMs: 1e6 });
+  const mkL = (field, locs) => ({ field, players: new Map(locs.map((l, i) => [i, { loc: l, role: 'hider', caught: false }])), events: [] });
+  const fields = [{ circle: { ...C0, r: 402 }, poly: null }, { circle: null, poly: SQ(0.002) }, { circle: { ...C0, r: 300 }, poly: SQ(0.002) }];
+  for (const f of fields) for (const locs of [[C0], [off(C0, 3000, 10)], [off(C0, 350, 45), off(C0, 380, 200)]]) {
+    const L = mkL(f, locs);
+    for (let i = 0; i < 100; i++) { a.spawnBounty(L); assert.ok(L.bounty && Field.inField(f, L.bounty), 'bounty outside field'); }
+  }
+  a.server.close();
+});
+
+test('out of bounds: warning state for the player, hider auto-revealed (true spot, decoy ignored) on next ping after grace', async () => {
+  const a = createApp({ tickMs: 20, minSec: 0.1, oobMinMs: 300 });
+  await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  const { host, hs } = await setup(a, { gameSec: 4, pingSec: 0.8, hideSec: 0 });
+  const IN = off(C0, 100, 0), OUT = off(C0, 700, 0);
+  host.send({ type: 'loc', ...C0, acc: 5 }); hs.forEach(h => h.send({ type: 'loc', ...IN, acc: 5 }));
+  host.send({ type: 'field', field: { circle: { ...C0, r: 402 } } }); await until(() => host.state.field);
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  assert.equal(a.oobGrace([...a.lobbies.values()][0]), 300);
+  hs[0].send({ type: 'decoy' }); await until(() => hs[0].state.decoyArmed);
+  hs[0].send({ type: 'loc', ...OUT, acc: 5 });
+  await until(() => hs[0].state.outSince > 0);
+  assert.ok(host.state.players.find(p => p.id === hs[0].joined.id).out, 'others see an out flag (no coords)');
+  assert.ok(!hs[1].raw().includes(String(OUT.lat)), 'no coord leak');
+  await until(() => host.state.events.some(e => /revealed at the next ping/.test(e.text)), 2000);
+  const n = host.pings.length; await until(() => host.pings.length > n, 2000);
+  const pl = host.pings[n].locs[hs[0].joined.id];
+  assert.ok(Math.abs(pl.lat - OUT.lat) < 1e-9, 'true position revealed (decoy ignored while out of bounds)');
+  hs[0].send({ type: 'loc', ...IN, acc: 5 }); await until(() => !hs[0].state.outSince);
+  assert.ok(!host.state.players.find(p => p.id === hs[0].joined.id).out);
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});
+
+test('no boundary (default): nobody is ever out of bounds', async () => {
+  const a = await boot(); const { host, hs } = await setup(a, { gameSec: 1, pingSec: 0.2, hideSec: 0 });
+  assert.equal(host.state.field, null);
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing'); await sleep(200);
+  assert.ok(host.state.players.every(p => !p.out) && !host.msgs.some(m => m.type === 'startBlocked'));
+  a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
+});

@@ -20,6 +20,19 @@
   <div id="gpsStatus" class="gps"></div>
   <button id="btnGps" class="big">Enable location</button>
   <p id="hostName" class="note"></p><h3>Players</h3><ul id="playerList" class="players"></ul>
+  <div id="fieldPanel">
+    <h3>Playing field</h3>
+    <div id="fieldSummary" class="note"></div>
+    <div id="fieldMap"></div>
+    <div id="fieldHost" class="hidden">
+      <div class="seg" id="fieldRadius">
+        <button class="small" data-r="0">No boundary</button><button class="small" data-r="402">0.25 mi</button><button class="small" data-r="805">0.5 mi</button><button class="small" data-r="1609">1 mi</button>
+      </div>
+      <div class="seg"><button id="btnCenterMe" class="small">📍 Center on me</button><button id="btnDraw" class="small">✏️ Draw shape</button><button id="btnRemoveShape" class="small hidden">🗑 Remove shape</button></div>
+      <div id="drawBar" class="seg hidden"><button id="btnUndoPt" class="small">↩ Undo point</button><button id="btnClearPts" class="small">Clear</button><button id="btnFinishDraw" class="small primary">✅ Finish</button><span id="drawCount" class="note"></span></div>
+      <p class="note" id="fieldHelp">Pick a circle (drag the 📍 pin to move it) and/or draw a shape. With both, the field is the area inside both.</p>
+    </div>
+  </div>
   <div id="hostPanel" class="hidden">
     <h3>Settings</h3>
     <div class="grid">
@@ -57,6 +70,7 @@
 <section id="game" class="screen hidden full">
   <div id="hud"><div id="roleBadge"></div><div id="clock"></div><div id="pingClock"></div></div>
   <div id="banner" class="hidden"></div>
+  <div id="oob" class="hidden"></div>
   <div id="map"></div>
   <div id="compass" class="hidden"><div class="ring"><div id="arrow">➤</div></div>
     <div id="compassBand"></div><div id="compassNote" class="note"></div>
@@ -84,4 +98,5 @@
 </div>
 <div id="toast" class="hidden"></div>
 <script src="vendor/leaflet.js"></script>
+<script src="field.js"></script>
 <script src="app.js"></script></body></html>

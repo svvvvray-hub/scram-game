@@ -39,7 +39,8 @@ function handle(m) {
   else if (m.type === 'camRequest') takePhoto();
   else if (m.type === 'camPeek') { photos[m.id] = m; renderPhotos(); if (m.data || m.unavailable) toast(`📷 Sneak peek: ${m.name}${m.data ? '' : ' — photo unavailable'}`); }
   else if (m.type === 'compass') { compassData = m; renderCompass(); }
-  else if (m.type === 'state') { offset = m.serverNow - Date.now(); S = m; window.S = m; render(); }
+  else if (m.type === 'startBlocked') { const names = m.outside.map(o => o.name + (o.noGps ? ' (no GPS)' : '')).join(', '); if (confirm(`Outside the playing field: ${names}. Start anyway?`)) sendMsg({ type: 'start', force: true }); else toast('Outside: ' + names, 5000); }
+  else if (m.type === 'state') { offset = m.serverNow - Date.now(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); }
 }
 const me = () => S && S.players.find(p => p.id === S.you);
 
@@ -50,7 +51,8 @@ setInterval(() => {
 }, 2000);
 function resetLocal() {
   sess = null; S = null; window.S = null; viewingEnd = false; lastRound = -1; localStorage.removeItem('scram');
-  if (endMap) { endMap.remove(); endMap = null; endLayer = null; } if (map) { map.remove(); map = null; layers = {}; }
+  if (endMap) { endMap.remove(); endMap = null; endLayer = null; } if (map) { map.remove(); map = null; layers = {}; gameField = null; }
+  if (fieldMap) { fieldMap.remove(); fieldMap = null; centerPin = null; fieldKey = ''; drawing = null; }
   history.replaceState(null, '', '/'); show('home');
 }
 // ---------- GPS ----------
@@ -178,7 +180,8 @@ function renderLobby() {
     const role = isHost ? `<button class="small pill ${p.role}" data-role="${p.id}">${p.role === 'hunter' ? '🔦 hunter' : '🙈 hider'}</button>`
       : `<span class="pill ${p.role}">${p.role === 'hunter' ? '🔦 hunter' : '🙈 hider'}</span>`;
     const cam = p.role === 'hider' && S.settings.features?.cam ? (p.cam === 'granted' ? '<span class="pill ok">📷</span>' : p.cam === 'denied' ? '<span class="pill bad">no 📷</span>' : '') : '';
-    return `<li><span class="nm">${esc(p.name)}${cam}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
+    const outP = S.field && p.out ? '<span class="pill out">outside field</span>' : '';
+    return `<li><span class="nm">${esc(p.name)}${cam}${outP}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
   }).join('');
   for (const b of document.querySelectorAll('[data-role]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.role); sendMsg({ type: 'role', id: p.id, role: p.role === 'hunter' ? 'hider' : 'hunter' }); };
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
@@ -188,6 +191,7 @@ function renderLobby() {
   const m = me(), hider = m && m.role === 'hider';
   $('camPanel').classList.toggle('hidden', !(hider && st.features?.cam));
   if (m && camConsent && m.cam !== camConsent) sendMsg({ type: 'cam', cam: camConsent });
+  renderField();
   $('camStatus').textContent = m?.cam === 'granted' ? '✅ Ready · camera allowed' : m?.cam === 'denied' ? '✅ Ready · no camera (hunters see “photo unavailable”)' : 'Not ready yet';
 }
 const FEAT = [['decoy', 'fDecoy'], ['chime', 'fChime'], ['bounty', 'fBounty'], ['cam', 'fCam'], ['compass', 'fCompass']];
@@ -201,12 +205,78 @@ $('btnRandom').onclick = () => sendMsg({ type: 'randomize', hunters: +$('sHunter
 $('btnStart').onclick = () => { const bad = S.players.filter(p => p.perm !== 'granted'); if (bad.length && !confirm(`${bad.map(p => p.name).join(', ')} ${bad.length > 1 ? "don't" : "doesn't"} have GPS yet. Start anyway?`)) return; sendMsg({ type: 'start' }); };
 $('btnShare').onclick = async () => { const url = location.origin + '/j/' + S.code; try { if (navigator.share) await navigator.share({ title: 'Join my Scram game', url }); else { await navigator.clipboard.writeText(url); toast('Link copied'); } } catch {} };
 
+// ---------- playing field ----------
+let fieldMap = null, fieldGroup = null, drawGroup = null, myDot = null, centerPin = null, drawing = null, fieldKey = '', gameField = null, endField = null, lastVib = 0;
+const TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const miles = r => { const m = r / Field.MILE; return (Math.abs(m - Math.round(m * 4) / 4) < 0.01 ? +(Math.round(m * 4) / 4) : +m.toFixed(2)) + ' mi'; };
+function circlePts(c, n = 72) { const out = []; for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI;
+  out.push([c.lat + c.r / 111320 * Math.cos(a), c.lng + c.r / (111320 * Math.cos(c.lat * Math.PI / 180)) * Math.sin(a)]); } return out; }
+function fieldBounds(f) { const b = Field.bbox(f); return L.latLngBounds([b.s, b.w], [b.n, b.e]); }
+// Outline in yellow + darken everything outside (one shaded "world with a hole" per shape; with both, outside either is dark).
+function drawFieldLayers(group, f) {
+  group.clearLayers(); if (!f) return;
+  const world = [[-85, -179.9], [-85, 179.9], [85, 179.9], [85, -179.9]], holes = [];
+  if (f.circle) { holes.push(circlePts(f.circle)); L.circle([f.circle.lat, f.circle.lng], { radius: f.circle.r, color: '#facc15', weight: 3, fill: false, interactive: false }).addTo(group); }
+  if (f.poly) { holes.push(f.poly); L.polygon(f.poly, { color: '#facc15', weight: 3, fill: false, dashArray: f.circle ? '8 6' : null, interactive: false }).addTo(group); }
+  for (const h of holes) L.polygon([world, h], { stroke: false, fillColor: '#000', fillOpacity: .35, interactive: false }).addTo(group);
+}
+const fieldText = f => !f ? 'No boundary — play anywhere.' : [f.circle && `⭕ ${miles(f.circle.r)} circle`, f.poly && `✏️ drawn shape (${f.poly.length} pts)`].filter(Boolean).join(' ∩ ') + (f.circle && f.poly ? ' — field is the area inside both' : '');
+function setField(f) { if (f && !f.circle && !f.poly) f = null; sendMsg({ type: 'field', field: f }); }
+const curField = () => S.field || { circle: null, poly: null };
+function ensureFieldMap() {
+  if (fieldMap) return;
+  const c = S.field ? fieldBounds(S.field).getCenter() : myLoc ? L.latLng(myLoc.lat, myLoc.lng) : L.latLng(51.5, 0);
+  fieldMap = window.fieldMap = L.map('fieldMap', { doubleClickZoom: false, tap: true }).setView(c, 15);
+  L.tileLayer(TILES, { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(fieldMap);
+  fieldGroup = L.layerGroup().addTo(fieldMap); drawGroup = L.layerGroup().addTo(fieldMap);
+  fieldMap.on('click', e => { if (!drawing) return; if (drawing.length >= Field.MAX_POINTS) return toast(`Max ${Field.MAX_POINTS} points`); drawing.push([e.latlng.lat, e.latlng.lng]); renderDraw(); });
+  fieldKey = '';
+}
+function renderDraw() {
+  drawGroup.clearLayers(); document.body.classList.toggle('drawing', !!drawing);
+  $('drawBar').classList.toggle('hidden', !drawing); $('btnDraw').classList.toggle('hidden', !!drawing);
+  if (!drawing) return;
+  if (drawing.length > 1) (drawing.length > 2 ? L.polygon : L.polyline)(drawing, { color: '#facc15', weight: 3, dashArray: '6', fillOpacity: .15, interactive: false }).addTo(drawGroup);
+  drawing.forEach(p => L.circleMarker(p, { radius: 7, color: '#000', weight: 2, fillColor: '#facc15', fillOpacity: 1, interactive: false }).addTo(drawGroup));
+  $('drawCount').textContent = `${drawing.length} pt${drawing.length === 1 ? '' : 's'} — tap the map to add`;
+  $('btnFinishDraw').disabled = drawing.length < 3;
+}
+function renderField() {
+  const f = S.field, isHost = S.you === S.host;
+  $('fieldPanel').classList.toggle('hidden', !isHost && !f); $('fieldHost').classList.toggle('hidden', !isHost);
+  $('fieldSummary').textContent = fieldText(f) + (me()?.out ? ' ⚠️ You are outside the field.' : '');
+  if (!isHost && !f) return;
+  ensureFieldMap(); setTimeout(() => fieldMap && fieldMap.invalidateSize(), 60);
+  const key = JSON.stringify(f || null);
+  if (key !== fieldKey) { fieldKey = key; drawFieldLayers(fieldGroup, f); if (f && !drawing) setTimeout(() => fieldMap && fieldMap.fitBounds(fieldBounds(f).pad(.1), { maxZoom: 17 }), 80); }
+  if (myLoc) { if (!myDot) myDot = L.circleMarker([myLoc.lat, myLoc.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#22c55e', fillOpacity: 1, interactive: false }).addTo(fieldMap); else myDot.setLatLng([myLoc.lat, myLoc.lng]); }
+  if (isHost && f?.circle) {
+    if (!centerPin) { centerPin = L.marker([f.circle.lat, f.circle.lng], { draggable: true, autoPan: true, icon: L.divIcon({ className: 'bountyIcon', html: '📍', iconSize: [36, 36], iconAnchor: [18, 34] }) }).addTo(fieldMap);
+      centerPin.on('dragend', () => { const ll = centerPin.getLatLng(); setField({ ...curField(), circle: { ...S.field.circle, lat: ll.lat, lng: ll.lng } }); }); }
+    else centerPin.setLatLng([f.circle.lat, f.circle.lng]);
+  } else if (centerPin) { centerPin.remove(); centerPin = null; }
+  for (const b of document.querySelectorAll('#fieldRadius button')) b.classList.toggle('on', +b.dataset.r === 0 ? !f : +b.dataset.r === f?.circle?.r);
+  $('btnRemoveShape').classList.toggle('hidden', !f?.poly || !!drawing); $('btnDraw').textContent = f?.poly ? '✏️ Redraw shape' : '✏️ Draw shape';
+  renderDraw();
+}
+for (const b of document.querySelectorAll('#fieldRadius button')) b.onclick = () => {
+  const r = +b.dataset.r; if (!r) { drawing = null; return setField(null); }
+  const old = S.field?.circle, c = old || (myLoc ? { lat: myLoc.lat, lng: myLoc.lng } : (() => { const m = fieldMap.getCenter(); toast('No GPS yet — circle centered on the map'); return { lat: m.lat, lng: m.lng }; })());
+  setField({ ...curField(), circle: { lat: c.lat, lng: c.lng, r } });
+};
+$('btnCenterMe').onclick = () => { if (!myLoc) return toast('No GPS fix yet'); fieldMap.setView([myLoc.lat, myLoc.lng]); if (S.field?.circle) setField({ ...curField(), circle: { ...S.field.circle, lat: myLoc.lat, lng: myLoc.lng } }); else toast('Pick a radius to place a circle here'); };
+$('btnDraw').onclick = () => { drawing = []; renderField(); toast('Tap the map to add corners, then Finish'); };
+$('btnUndoPt').onclick = () => { drawing.pop(); renderDraw(); };
+$('btnClearPts').onclick = () => { drawing = []; renderDraw(); };
+$('btnFinishDraw').onclick = () => { if (drawing.length < 3) return toast('Need at least 3 points'); const poly = drawing; drawing = null; setField({ ...curField(), poly }); renderField(); };
+$('btnRemoveShape').onclick = () => setField({ ...curField(), poly: null });
+
 // ---------- game ----------
 function ensureMap() {
   if (map) return;
   map = L.map('map', { zoomControl: false }).setView([myLoc?.lat || 51.5, myLoc?.lng || 0], 16);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-  map._fitted = false;
+  L.tileLayer(TILES, { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  map._fitted = false; gameField = L.layerGroup().addTo(map); gameField.key = '';
 }
 function marker(key, loc, color, label, opts = {}) {
   let l = layers[key];
@@ -223,6 +293,7 @@ function renderGame() {
   $('hideCover').classList.toggle('hidden', !(hunter && S.state === 'hiding'));
   $('hunterPanel').classList.toggle('hidden', !hunter); $('hiderPanel').classList.toggle('hidden', hunter || m.caught);
   $('btnEnd').classList.toggle('hidden', S.you !== S.host);
+  { const key = JSON.stringify(S.field || null); if (gameField.key !== key) { gameField.key = key; drawFieldLayers(gameField, S.field); } }
   for (const k in layers) layers[k].seen = false;
   const pts = [];
   // me
@@ -246,8 +317,10 @@ function renderGame() {
     }
     layers.bounty.seen = true;
   }
-  if (!hunter && m.loc && !map.getBounds().pad(-0.1).contains([m.loc.lat, m.loc.lng])) map.panTo([m.loc.lat, m.loc.lng]);
+  if (!hunter && !S.outSince && m.loc && !map.getBounds().pad(-0.1).contains([m.loc.lat, m.loc.lng])) map.panTo([m.loc.lat, m.loc.lng]);
   for (const k in layers) if (!layers[k].seen) { map.removeLayer(layers[k].c); map.removeLayer(layers[k].m); delete layers[k]; }
+  if (S.outSince && S.field && m.loc && map._oobFit !== S.outSince) { map._oobFit = S.outSince; const fb = fieldBounds(S.field).extend([m.loc.lat, m.loc.lng]).pad(.25); setTimeout(() => { if (map) { map.invalidateSize(); map.fitBounds(fb); } }, 120); map._fitted = true; }
+  if (S.field && !map._fitted) { const fb = fieldBounds(S.field); pts.forEach(p => fb.extend(p)); setTimeout(() => { if (map) { map.invalidateSize(); map.fitBounds(fb.pad(.05)); } }, 120); map._fitted = true; }
   if (pts.length && (!map._fitted || (S.pingCount !== lastPingN && hunter))) { map.fitBounds(L.latLngBounds(pts).pad(.3), { maxZoom: 17 }); map._fitted = true; lastPingN = S.pingCount; }
   if (hunter) {
     $('hiderBtns').innerHTML = hiders.map(p => `<button ${p.caught ? 'disabled' : ''} class="${p.caught ? '' : 'hunt'}" data-catch="${p.id}"><span>${p.caught ? '✅' : '🙈'} ${esc(p.name)}</span><span>${p.caught ? 'caught' : 'Mark caught'}</span></button>`).join('') || '<p class="note">No hiders left</p>';
@@ -284,8 +357,17 @@ setInterval(() => {
   const t = tnow();
   if (S.state === 'hiding') { $('clock').textContent = fmt(S.hideEndsAt - t); $('pingClock').textContent = 'Head start'; $('hideClock').textContent = fmt(S.hideEndsAt - t); }
   else if (S.state === 'playing') { $('clock').textContent = fmt(S.endsAt - t); $('pingClock').innerHTML = S.compass ? '🧭 <b>SUDDEN<br>DEATH</b>' : `Next ping<br><b>${fmt(S.nextPingAt - t)}</b>`; }
-  warnings();
+  warnings(); oobBanner();
 }, 250);
+function oobBanner() {
+  const running = S.state === 'playing' || S.state === 'hiding', m = me(), on = running && !!S.outSince && m;
+  $('oob').classList.toggle('hidden', !on); if (!on) return;
+  const left = S.outSince + S.oobGraceMs - tnow();
+  $('oob').textContent = m.role === 'hunter' ? '🚨 OUT OF BOUNDS — get back inside the field!'
+    : S.state === 'hiding' ? '🚨 OUT OF BOUNDS — get back inside before the hunt starts!'
+    : left > 0 ? `🚨 OUT OF BOUNDS — get back inside! Revealed to hunters in ${Math.ceil(left / 1000)} s` : '🚨 OUT OF BOUNDS — you will be revealed at the next ping!';
+  if (Date.now() - lastVib > 10000) { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); }
+}
 
 // ---------- end ----------
 function renderEnd() {
@@ -296,7 +378,7 @@ function renderEnd() {
     return `<div class="sumrow"><b style="color:${COLORS[i % COLORS.length]}">● ${esc(p.name)}</b> — ${p.caught ? 'caught at ' + fmt(p.caughtAt - S.startedAt) : 'survived'} · ${n} ping${n === 1 ? '' : 's'}</div>`; }).join('') +
     `<p class="note">${S.pingCount} pings · ${S.events.map(e => esc(e.text)).join(' · ')}</p>`;
   if (!endMap) { endMap = L.map('endMap'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(endMap); }
-  if (endLayer) endLayer.remove(); endLayer = L.layerGroup().addTo(endMap);
+  if (endLayer) endLayer.remove(); endLayer = L.layerGroup().addTo(endMap); drawFieldLayers(L.layerGroup().addTo(endLayer), S.field);
   const all = [];
   hiders.forEach((p, i) => {
     const trail = S.pings.map(pg => pg.locs[p.id]).filter(Boolean).map(l => [l.lat, l.lng]);
