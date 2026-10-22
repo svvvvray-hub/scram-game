@@ -48,6 +48,9 @@
     <label class="chk"><input id="sBecome" type="checkbox"> 🧟 Caught hiders join the hunters (infection)</label>
     <p class="note">Tap a role pill to switch hunter/hider (at least 1 hunter), or randomize with the hunter count above.</p>
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
+    <label>🎁 Power-up drops<select id="sPower"><option value="off">Off</option><option value="normal">Normal (every 3 min)</option><option value="chaos">Chaos (every 90 s)</option></select></label>
+    <label>🔔 Chime volume <span id="chimeVolLbl">25%</span><input id="sChimeVol" type="range" min="10" max="100" step="5" value="25"></label>
+    <div class="seg"><button id="btnChimeAll" class="small">🔔 Test chime on all phones</button> <span id="chimeTally" class="note"></span></div>
     <h3>Power-ups</h3>
     <div id="features">
       <label class="chk"><input id="fDecoy" type="checkbox"> 👻 Ghost decoy (hiders: 2 fake pings)</label>
@@ -67,6 +70,12 @@
     <button id="btnReadyNoCam" class="small">Ready without camera</button>
     <div id="camStatus" class="note"></div>
   </div>
+  <div id="chimeVoteBox" class="chimeVoteBox hidden"><b>🔔 Host is testing the chime</b> <span id="chimeVoteVol" class="note"></span>
+    <div id="soundUnlock" class="hidden"><button id="btnUnlockSound" class="big primary">🔊 Tap to enable sound</button></div>
+    <div class="seg"><button class="small" data-vote="good">👍 Good</button><button class="small" data-vote="quiet">🔉 Too quiet</button><button class="small" data-vote="loud">🔊 Too loud</button></div></div>
+  <div class="soundBox"><button id="btnSound" class="small">🔔 Check your sound</button>
+    <div id="soundAsk" class="hidden">Did you hear it? <button id="soundYes" class="small primary">Yes</button> <button id="soundNo" class="small">No</button></div>
+    <div id="soundTips" class="note hidden">🔇 Turn off silent / Do-Not-Disturb mode (iPhone: the side switch), raise the media volume, and unmute this tab. Websites can't override silent mode or your volume.</div></div>
   <p id="waitHost" class="note hidden">Waiting for the host to start…</p>
   <button id="btnLeaveLobby" class="big danger">Leave lobby</button>
   <p class="note">⚠️ Keep this page open and the screen on during the game — phones (especially iPhones) pause GPS when the screen locks or the browser is in the background.</p>
@@ -77,6 +86,8 @@
   <div id="banner" class="hidden"></div>
   <div id="oob" class="hidden"></div>
   <div id="map"></div>
+  <div id="pickupRing" class="hidden"><div class="ring2"><span id="pickupPct"></span></div><div id="pickupTxt"></div></div>
+  <div id="sonarAlert" class="hidden"></div>
   <div id="compass" class="hidden"><div class="ring"><div id="arrow">➤</div></div>
     <div id="compassBand"></div><div id="compassNote" class="note"></div>
     <button id="btnHeading" class="small hidden">Enable phone compass</button></div>
@@ -89,6 +100,8 @@
     <div id="hiderPanel" class="hidden"><div id="revealed" class="note"></div><div id="hiderFx" class="note"></div>
       <button id="btnDecoy" class="big decoy">👻 Ghost decoy <span id="decoyCount"></span></button>
       <button id="btnCaughtSelf" class="big danger">I got caught</button></div>
+    <div id="puBox" class="puBox hidden"><button id="btnPower" class="big power"></button><div id="puNote" class="note"></div></div>
+    <div id="houndBox" class="houndBox hidden"></div>
     <button id="btnEnd" class="small hidden">End game (host)</button> <button id="btnLeaveGame" class="small">Leave</button>
     <p class="note">Keep the screen on &amp; this tab open — browsers may pause GPS when the screen is off.</p>
   </div>
@@ -129,6 +142,7 @@
 </section>
 </div>
 <div id="toast" class="hidden"></div>
+<div id="chimeFlash" class="hidden"></div>
 <div id="recPreview" class="hidden"><video id="recVid" muted playsinline autoplay></video><video id="recPip" class="hidden" muted playsinline autoplay></video></div>
 <div id="bubbleHit" class="hidden" title="Tap to swap camera / map, drag to move"></div>
 <div id="recDock"><div id="recBar" class="recBar hidden"><span class="recDot"></span><b>REC</b> <span id="recTime" class="mono">00:00</span> <span id="recMode" class="note"></span>

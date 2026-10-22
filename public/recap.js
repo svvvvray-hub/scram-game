@@ -78,7 +78,8 @@
   }
   const TROPHIES = { ghost: ['👻', 'Ghost', 'Never within 50 m of a hunter'], bloodhound: ['🐕', 'Bloodhound', '3+ catches'], closeShave: ['🪒', 'Close Shave', 'Closest call of the game'],
     decoyMaster: ['🎭', 'Decoy Master', 'Most decoys used'], bountyHunter: ['💰', 'Bounty Hunter', 'Most bounties claimed'], marathoner: ['🏃', 'Marathoner', 'Most distance walked'],
-    escapeArtist: ['🪄', 'Escape Artist', 'Survived a close call'], firstBlood: ['🩸', 'First Blood', 'First catch'], zombie: ['🧟', 'Zombie', 'Infected hider who caught someone'], ruleBender: ['🚧', 'Rule Bender', 'Most time out of bounds'] };
+    escapeArtist: ['🪄', 'Escape Artist', 'Survived a close call'], firstBlood: ['🩸', 'First Blood', 'First catch'], zombie: ['🧟', 'Zombie', 'Infected hider who caught someone'], ruleBender: ['🚧', 'Rule Bender', 'Most time out of bounds'],
+    thief: ['🦝', 'Thief', 'Stole a hunter drop'], powerPlayer: ['⚡', 'Power Player', 'Most power-ups used'] };
   function computeTrophies(R, cc) {
     const s = stats(R), out = [], add = (key, id) => { if (id && !out.some(x => x.key === key && x.id === id)) { const [icon, title, desc] = TROPHIES[key]; out.push({ key, id, name: nameOf(R, id), icon, title, desc }); } };
     for (const p of R.players.filter(p => p.startRole === 'hider')) {
@@ -94,6 +95,9 @@
     if (s.first && s.first.by) add('firstBlood', s.first.by);
     for (const c of catches(R)) { const p = R.players.find(x => x.id === c.by); if (p && p.startRole === 'hider' && caughtAt(R, p.id) < c.t) add('zombie', p.id); }
     const o = top(s.oob); if (o) add('ruleBender', o[0]);
+    for (const id of Object.keys(count(R, 'steal'))) add('thief', id);
+    const pw = {}; for (const e of R.log || []) if (e.k === 'power' && e.id && e.ptype !== 'shieldBlock') pw[e.id] = (pw[e.id] || 0) + 1;
+    const pp = top(pw); if (pp) add('powerPlayer', pp[0]);
     return out;
   }
   // Instagram handle: strip @ / parse instagram.com URLs; letters, digits, . and _, max 30. Returns '' if invalid.

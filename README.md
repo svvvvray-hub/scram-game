@@ -223,3 +223,54 @@ and Privacy Policy” (remembered per `LEGAL_VERSION`); the server rejects creat
 highlight uploads, Instagram validation, /play redirect, consent). E2E (server on :3000, Chrome):
 `node test/e2e.js`, `e2e_features.js`, `e2e_field.js`, `e2e_record.js`, `e2e_recap.js` (2-hunter game, catch confirm,
 3 s recording segments at the preset bitrate, recap replay/heat map/share image, reels, group reel, viral clip).
+
+## v6 — random power-up drops & chime
+
+Server-authoritative (`powerups.js` = pure helpers, effects in `server.js`). All timings scale with game length
+(`scale = gameMin / 20`), so the 2-min quick test shows everything.
+
+**Drops.** Host setting *🎁 Power-up drops*: **Off / Normal** (default, every 3 min) / **Chaos** (every 90 s).
+Drops alternate hider → hunter (≈6 per 20-min game), none in the first 2 min of the hunt or in sudden death (existing
+drops vanish when it starts). Hider drops spawn 50–200 m from a hider, preferring spots farther from the hunters;
+hunter drops 50–200 m from a hunter; always inside the (current) playing field. Unclaimed drops despawn after 2.5 min.
+*Visibility:* hider drops are sent **only to uncaught hiders** (never to hunters); hunter drops are visible to everyone.
+*Pickup:* stand within 15 m for 5 s continuously (progress ring; stepping out resets). Max 1 held power-up (tap to
+use), 3-min cooldown between uses per player. *Steal:* a hider who holds a hunter drop for 5 s destroys it — the spot
+flashes for everyone and that hider is immediately pinged to the hunters with their real location (decoys ignored).
+Everyone gets a toast when a power-up is used (“A hider used Jammer!”, “Ana used Sonar!” — hiders stay anonymous).
+Nothing can be used in sudden death (held ones are greyed out).
+
+| Hider (weights) | Effect |
+|---|---|
+| 📡 Hunter Radar (~22 %) | see all hunters live for 30 s |
+| 📵 Jammer (~22 %) | 60 s: hunters' map blurs/jitters and the compass spins (pings still happen) |
+| 🤫 Silent Shoes (~22 %) | you never chime again this round (also immune to Sonar) |
+| 🛡️ Shield (~15 %) | activate with no hunter within 20 m; the next hunter catch claim (or host catch) is auto-rejected once — “Shield blocked!”; lasts until used or 5 min |
+| ⏩ Extra Time (~10 %) | −2 min on the clock for everyone (clamped so it never cuts into sudden death) |
+| 💖 Revive (~10 %) | frees the earliest-caught hider (infected hunters revert to hider); everyone is told |
+
+| Hunter (even odds) | Effect |
+|---|---|
+| 🔊 Sonar | every hider within 75 m chimes (Silent Shoes blocks it); ALL hiders see “A hunter used Sonar! (name)” |
+| 🔍 Truth Ping | the next scheduled ping ignores decoys and bounty wipes for everyone (decoys stay armed). The game has no Ghost/Frozen effects, so nothing else to ignore |
+| 🎯 Shrink Zone | field shrinks 30 % (circle radius ×0.7, polygon toward its centroid) for 3 min with the normal 30 s out-of-bounds grace; with no boundary, a circle on the hunters' centroid covering all players ×0.7 |
+| 📷 Cam Peek+ | fresh snapshot request to every consenting hider, relayed to hunters |
+| 🔥 Heat Trail | for 30 s, that hunter sees each hider's last-2-min trail |
+| 🐕 Bloodhound | for 60 s, that hunter sees each hider's distance in metres (no direction) |
+
+Recap: drops, pickups, steals and uses are in the timeline/replay; trophies **🦝 Thief** (stole a hunter drop) and
+**⚡ Power Player** (most power-ups used).
+
+**Chime.** Soft 3-note sine chime (E5–G5–B5, gentle attack), default **25 %** (Web Audio gain 0.25) — we play in
+residential areas. Host lobby setting *🔔 Chime volume* 10–100 % applies to every phone. Every chime also vibrates
+`[300,100,300]` and flashes the screen. *🔔 Check your sound* plays it and asks “Did you hear it?”; “No” shows tips.
+Moving the slider (on release, or at most once per 1.5 s while dragging) or *Test chime on all phones* plays a preview
+on every phone in the lobby (lobby only, server-throttled); each player votes 👍 Good / 🔉 Too quiet / 🔊 Too loud and
+the host sees a live tally. Phones whose audio isn't unlocked yet get “Tap to enable sound”.
+**Note:** websites cannot override the phone's silent/Do-Not-Disturb mode or its volume — the vibration and flash are
+the fallback.
+
+Tests: `test/powerups.test.js` (spawn timing/distances/field, visibility, 5 s pickup + reset, max held + cooldown,
+steal-and-ping, every effect, weight distribution, Off/Chaos, chime volume, chime preview throttle/broadcast/tally).
+E2E `test/e2e_powerups.js` needs a server started with `SCRAM_TEST_PU=hider:radar,hunter:sonar` (a test-only hook
+that forces drop types): `PORT=3001 SCRAM_TEST_PU=hider:radar,hunter:sonar node server.js` then `node test/e2e_powerups.js`.

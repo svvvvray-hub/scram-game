@@ -56,6 +56,9 @@
       else if (e.k === 'catch') { const p = Recap.posAt(R.trails[e.id], e.t); if (p) mk([p.lat, p.lng], '🎯', esc(e.text)); }
       else if (e.k === 'close') mk([e.lat, e.lng], '😱', `${esc(e.text)}`).getElement?.()?.classList.add('closeMk');
       else if (e.k === 'chime') for (const id of e.ids || []) { const p = Recap.posAt(R.trails[id], e.t); if (p) mk([p.lat, p.lng], '🔔', `🔔 ${esc(pname(id))} chimed`); }
+      else if (e.k === 'steal') mk([e.lat, e.lng], '🦝', esc(e.text));
+      else if (e.k === 'pickup') mk([e.lat, e.lng], '🎁', esc(e.text));
+      else if (e.k === 'power') { const p = Recap.posAt(R.trails[e.id], e.t); if (p) mk([p.lat, p.lng], '⚡', esc(e.text)); }
       else if (e.k === 'oob' && e.on) { const p = Recap.posAt(R.trails[e.id], e.t); if (p) mk([p.lat, p.lng], '🚧', esc(e.text)); }
     }
     const D = R.endedAt - R.startedAt; if (document.activeElement !== $('rScrub')) $('rScrub').value = t - R.startedAt;

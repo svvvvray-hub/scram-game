@@ -7,10 +7,12 @@ const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const Field = require('./public/field');
 const Recap = require('./public/recap');
+const PU = require('./powerups');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
 const MAX_GAME_MS = 6 * 3600 * 1000;      // safety cap for a single running round
 const STALE_MS = 45 * 1000;
+const CHIME_THROTTLE = 1500;
 const HL_TTL = 30 * 60 * 1000;           // uploaded highlight cuts live 30 min max (memory only)
 const HL_MAX = 15 * 1024 * 1024, HL_CUT_MAX = 3 * 1024 * 1024;
 
@@ -79,11 +81,11 @@ function createApp(opts = {}) {
     const code = makeCode(lobbies);
     const L = {
       code, createdAt: now(), hostId: null, players: new Map(), state: 'lobby',
-      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true,
+      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, powerups: 'normal', chimeVol: 25,
         features: Object.fromEntries(FEATURES.map(f => [f, true])) },
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
-      trails: {}, log: [], catches: new Map(), recapCache: null, highlights: new Map(),
+      trails: {}, log: [], catches: new Map(), drops: new Map(), nextDropAt: 0, dropSide: 'hider', jamUntil: 0, truthNext: false, shrink: null, nextHoundAt: 0, recapCache: null, highlights: new Map(),
     };
     lobbies.set(code, L);
     return L;
@@ -92,7 +94,7 @@ function createApp(opts = {}) {
   function addPlayer(L, name, ig) {
     const p = { id: rid(6), token: rid(16), name: String(name || 'Player').trim().slice(0, 20) || 'Player',
       role: 'hider', caught: false, caughtAt: 0, ws: null, loc: null, perm: 'unknown', connected: false, revealedAt: 0,
-      cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, ig: Recap.igHandle(ig) };
+      cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, held: null, lastUse: 0, pickup: null, silent: false, shieldUntil: 0, radarUntil: 0, houndUntil: 0, used: 0, ig: Recap.igHandle(ig) };
     if (!L.hostId) { L.hostId = p.id; p.role = 'hunter'; }
     L.players.set(p.id, p);
     return p;
@@ -112,18 +114,28 @@ function createApp(opts = {}) {
         stale: !p.loc || (t - p.loc.recvAt) > STALE_MS, out: outFlag(L, p) };
       if (p.ig && (L.state === 'lobby' || ended)) o.ig = p.ig; // handles: lobby + recap only, never during a game // in/out flag only, never coords
       const canSeeLive = p.id === me.id ||
-        (isHunter(me) && isHunter(p) && L.state !== 'lobby') ;
+        (isHunter(me) && isHunter(p) && L.state !== 'lobby') ||
+        (me.role === 'hider' && !me.caught && me.radarUntil > t && isHunter(p) && L.state === 'playing'); // Hunter Radar
       if (canSeeLive && p.loc) o.loc = { lat: p.loc.lat, lng: p.loc.lng, acc: p.loc.acc, ts: p.loc.ts };
       return o;
     });
     const v = { type: 'state', code: L.code, you: me.id, host: L.hostId, state: L.state, settings: L.settings,
       serverNow: t, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, nextPingAt: L.nextPingAt,
       winner: L.winner, players, pingCount: L.pings.length, events: L.events.slice(-8) };
-    v.field = L.field; v.oobGraceMs = oobGrace(L);
+    v.field = curField(L); v.baseField = L.field; v.shrinkUntil = L.shrink ? L.shrink.until : 0; v.oobGraceMs = oobGrace(L);
     if (me.outSince) v.outSince = me.outSince;
     v.round = L.round; v.camAt = L.camAt; v.compassAt = L.compassAt;
     v.compass = inCompass(L);
-    v.catches = catchView(L, me); v.hlCount = L.highlights.size; v.hlMine = L.highlights.has(me.id);
+    if (L.state === 'lobby' && L.chimeTest) { const tally = { good: 0, quiet: 0, loud: 0 }; for (const x of L.chimeTest.votes.values()) tally[x]++;
+      v.chimeTest = { id: L.chimeTest.id, vol: L.chimeTest.vol, myVote: L.chimeTest.votes.get(me.id) || null, ...(me.id === L.hostId ? { tally, n: L.players.size } : {}) }; }
+    v.catches = catchView(L, me);
+    if (L.state === 'playing') { // hider drops ONLY to uncaught hiders; hunter drops to everyone
+      const hiderView = me.role === 'hider' && !me.caught;
+      v.drops = [...L.drops.values()].filter(d => d.side === 'hunter' || hiderView).map(d => ({ id: d.id, side: d.side, lat: d.lat, lng: d.lng, expiresAt: d.expiresAt }));
+      v.pu = { held: me.held, cooldownUntil: me.lastUse ? me.lastUse + puCooldown(L) : 0, silent: me.silent, shieldUntil: me.shieldUntil, radarUntil: me.radarUntil, houndUntil: me.houndUntil,
+        pickup: me.pickup ? { dropId: me.pickup.dropId, since: me.pickup.since, need: pickupMs(L) } : null };
+      if (isHunter(me)) v.jamUntil = L.jamUntil;
+    } v.hlCount = L.highlights.size; v.hlMine = L.highlights.has(me.id);
     if (L.bounty && L.settings.features.bounty) v.bounty = { id: L.bounty.id, lat: L.bounty.lat, lng: L.bounty.lng, t: L.bounty.t, radius: 15 };
     if (me.role === 'hider') { v.decoys = me.decoys; v.decoyArmed = me.decoyArmed; v.cloaked = me.wipeNext; }
     if (isHunter(me) && L.state !== 'lobby') v.photos = Object.fromEntries(Object.entries(L.photos).map(([id, ph]) => [id, { name: ph.name, pending: ph.pending, unavailable: ph.unavailable, has: !!ph.data }])); // hunters only; image bytes go via camPeek
@@ -140,6 +152,7 @@ function createApp(opts = {}) {
     return v;
   }
 
+  const curField = L => (L.shrink && L.shrink.field) || L.field;
   const outFlag = (L, p) => (L.state === 'playing' || L.state === 'hiding') ? !!p.outSince : !!(L.field && p.loc && !Field.inField(L.field, p.loc));
   function broadcast(L) { for (const p of L.players.values()) if (p.ws) send(p.ws, viewFor(L, p)); }
   function event(L, text) { L.events.push({ t: now(), text }); }
@@ -178,7 +191,7 @@ function createApp(opts = {}) {
   function checkBounds(L) {
     const t = now(), running = L.state === 'playing' || L.state === 'hiding';
     for (const p of L.players.values()) {
-      const out = running && !!L.field && !(p.role === 'hider' && p.caught) && !!p.loc && !Field.inField(L.field, p.loc);
+      const out = running && !!curField(L) && !(p.role === 'hider' && p.caught) && !!p.loc && !Field.inField(curField(L), p.loc);
       if (out && !p.outSince) { p.outSince = t; event(L, `⚠️ ${p.name} is out of bounds`); logEv(L, 'oob', { id: p.id, on: true }, `⚠️ ${p.name} left the field`); broadcast(L); }
       else if (!out && p.outSince) { p.outSince = 0; p.oobReveal = false; logEv(L, 'oob', { id: p.id, on: false }, `✅ ${p.name} back inside`); broadcast(L); }
       if (out && p.role === 'hider' && L.state === 'playing' && !p.oobReveal && t - p.outSince >= oobGrace(L)) {
@@ -193,16 +206,17 @@ function createApp(opts = {}) {
     const t = now(), F = L.settings.features;
     const locs = {}, decoys = [], hidden = [], chimed = [];
     const hunters = [...L.players.values()].filter(p => isHunter(p) && p.loc);
+    const truth = scheduled && L.truthNext; if (truth) L.truthNext = false; // Truth Ping: ignore decoys and wipes this ping
     for (const h of activeHiders(L)) {
-      if (scheduled && !final && h.wipeNext && !h.oobReveal) { h.wipeNext = false; locs[h.id] = null; hidden.push(h.id); continue; }
+      if (scheduled && !final && !truth && h.wipeNext && !h.oobReveal) { h.wipeNext = false; locs[h.id] = null; hidden.push(h.id); continue; }
       if (!h.loc) { locs[h.id] = null; continue; }
       let pos = { lat: h.loc.lat, lng: h.loc.lng };
-      if (scheduled && !final && h.decoyArmed && !h.oobReveal) { h.decoyArmed = false; pos = offsetM(pos, rnd(30, 150), rnd(0, 360)); decoys.push(h.id); }
+      if (scheduled && !final && !truth && h.decoyArmed && !h.oobReveal) { h.decoyArmed = false; pos = offsetM(pos, rnd(30, 150), rnd(0, 360)); decoys.push(h.id); }
       locs[h.id] = { lat: pos.lat, lng: pos.lng, acc: h.loc.acc, ts: h.loc.ts, age: t - h.loc.recvAt }; h.revealedAt = t;
-      if (scheduled && !final && F.chime && hunters.some(x => distM(x.loc, h.loc) <= 40)) chimed.push(h);
+      if (scheduled && !final && F.chime && !h.silent && hunters.some(x => distM(x.loc, h.loc) <= 40)) chimed.push(h);
     }
-    L.pings.push({ t, locs, out: !scheduled, decoys, hidden });
-    logEv(L, 'ping', { locs, decoys, hidden, out: !scheduled }, `📡 Ping #${L.pings.length}${!scheduled ? ' (bounty)' : ''}${decoys.length ? ` · ${decoys.length} decoy` : ''}`);
+    L.pings.push({ t, locs, out: !scheduled, decoys, hidden, truth });
+    logEv(L, 'ping', { locs, decoys, hidden, out: !scheduled }, `📡 Ping #${L.pings.length}${!scheduled ? ' (bounty)' : ''}${truth ? ' (Truth Ping)' : ''}${decoys.length ? ` · ${decoys.length} decoy` : ''}`);
     if (chimed.length) logEv(L, 'chime', { ids: chimed.map(h => h.id) }, `🔔 ${chimed.map(h => h.name).join(', ')} chimed`);
     if (scheduled) L.nextPingAt = t + L.settings.pingSec * 1000;
     for (const p of L.players.values()) send(p.ws, { type: 'ping', t, n: L.pings.length, out: !scheduled, ...(isHunter(p) ? { locs, hidden, nearest: nearestHider(L, p)?.id || null } : {}) });
@@ -302,6 +316,7 @@ function createApp(opts = {}) {
           for (const p of L.players.values()) tryClaim(L, p);
           broadcast(L);
         }
+        tickPowerups(L);
         if (F.cam && L.camAt && t >= L.camAt) { L.camAt = 0; requestPhotos(L); broadcast(L); }
         if (L.camDeadline && t >= L.camDeadline) { expirePhotos(L); broadcast(L); }
       }
@@ -309,8 +324,9 @@ function createApp(opts = {}) {
   }
   const timer = setInterval(tick, opts.tickMs || 200);
 
-  function catchHider(L, h, by) {
+  function catchHider(L, h, by, self) {
     if (!h || h.role !== 'hider' || h.caught || !(L.state === 'playing' || L.state === 'hiding')) return;
+    if (!self && shieldBlocks(L, h, by)) return;
     trail(L, h, true);
     h.caught = true; h.caughtAt = now(); h.caughtBy = by ? by.id : null;
     for (const [pid, c] of L.catches) if (c.hiderId === h.id) L.catches.delete(pid);
@@ -324,6 +340,7 @@ function createApp(opts = {}) {
   // Catch confirmation: one side claims, the other side (or the host) confirms within CATCH_MS.
   function claimCatch(L, h, hunter, by) {
     if (!h || h.role !== 'hider' || h.caught || !running(L)) return;
+    if (by === 'hunter' && shieldBlocks(L, h, hunter)) return; // Shield: the claim is auto-rejected once
     const ex = [...L.catches.values()].find(c => c.hiderId === h.id);
     if (ex) { if (ex.by !== by && (by === 'hider' || !ex.hunterId || ex.hunterId === hunter.id)) return finalizeCatch(L, ex, hunter); return; }
     let target = by === 'hunter' ? hunter : nearestHunter(L, h, 30); // hider claim: nearest hunter within ~30 m, else any hunter
@@ -337,7 +354,7 @@ function createApp(opts = {}) {
   function finalizeCatch(L, c, who) {
     L.catches.delete(c.pid);
     const h = L.players.get(c.hiderId), hunter = c.hunterId ? L.players.get(c.hunterId) : (who && isHunter(who) ? who : null);
-    catchHider(L, h, hunter);
+    catchHider(L, h, hunter, c.by === 'hider');
   }
   function answerCatch(L, me, pid, yes) {
     const c = L.catches.get(pid); if (!c) return;
@@ -352,9 +369,124 @@ function createApp(opts = {}) {
       canAnswer: me.id === L.hostId || (c.by === 'hider' ? isHunter(me) && (!c.hunterId || c.hunterId === me.id) : me.id === c.hiderId) }));
   function clearRound(L) { L.trails = {}; L.log = []; L.catches.clear(); L.recapCache = null; L.highlights.clear(); }
 
+  // ---------- random power-up drops (server-authoritative; timings scale with game length) ----------
+  const sc = L => scale(L) * 1000;
+  const dropEvery = L => (L.settings.powerups === 'chaos' ? 90 : 180) * sc(L);
+  const dropTtl = L => 150 * sc(L);
+  const pickupMs = L => Math.max(opts.pickupMinMs ?? 1000, 5000 * scale(L));
+  const puCooldown = L => Math.max(opts.cooldownMinMs ?? 3000, 180 * sc(L));
+  const fxDur = (L, sec) => Math.max(opts.fxMinMs ?? 5000, sec * sc(L));
+  const PICK_M = 15;
+  // test hook only: SCRAM_TEST_PU=hider:radar,hunter:sonar forces drop types (e2e)
+  const forcedPU = Object.fromEntries(String(opts.forcePU ?? env.SCRAM_TEST_PU ?? '').split(',').map(x => x.split(':')).filter(([k, v]) => (k === 'hider' && v in PU.HIDER) || (k === 'hunter' && v in PU.HUNTER)));
+  function scheduleDrops(L) { L.drops.clear(); L.dropSide = 'hider'; L.nextDropAt = L.settings.powerups === 'off' ? 0 : L.hideEndsAt + Math.max(120 * sc(L), dropEvery(L)); }
+  function spawnDrop(L, side, rand = Math.random) {
+    const f = curField(L), hs = activeHiders(L).filter(h => h.loc), hu = hunterList(L).filter(h => h.loc);
+    let pos = null;
+    if (side === 'hider' && hs.length) { const h = hs[Math.floor(rand() * hs.length)]; pos = PU.spawnPoint(h.loc, hu.map(x => x.loc), f, rand); }
+    else if (side === 'hunter' && hu.length) { const h = hu[Math.floor(rand() * hu.length)]; pos = PU.spawnPoint(h.loc, null, f, rand); }
+    if (!pos && f) pos = Field.randomPoint(f, rand);
+    if (!pos) return null;
+    const d = { id: rid(4), side, lat: pos.lat, lng: pos.lng, t: now(), expiresAt: now() + dropTtl(L), type: forcedPU[side] || PU.roll(side, rand) };
+    L.drops.set(d.id, d); logEv(L, 'drop', { side, lat: d.lat, lng: d.lng, dropId: d.id }, side === 'hider' ? '🎁 A hider power-up dropped' : '⚡ A hunter power-up dropped');
+    for (const p of L.players.values()) if (side === 'hunter' || (p.role === 'hider' && !p.caught)) send(p.ws, { type: 'drop', side });
+    return d;
+  }
+  function revealPing(L, h) { // steal penalty: immediate real-location ping of one hider
+    const t = now(), locs = { [h.id]: h.loc ? { lat: h.loc.lat, lng: h.loc.lng, acc: h.loc.acc, ts: h.loc.ts, age: t - h.loc.recvAt } : null };
+    L.pings.push({ t, locs, out: true, decoys: [], hidden: [] }); h.revealedAt = t;
+    logEv(L, 'ping', { locs, decoys: [], hidden: [], out: true }, `📡 ${h.name} revealed (stole a drop)`);
+    for (const p of L.players.values()) send(p.ws, { type: 'ping', t, n: L.pings.length, out: true, steal: true, ...(isHunter(p) ? { locs, hidden: [] } : {}) });
+  }
+  function checkPickups(L) {
+    const t = now();
+    for (const p of L.players.values()) {
+      const eligible = isHunter(p) || (p.role === 'hider' && !p.caught);
+      const d = eligible && p.loc ? [...L.drops.values()].find(d => (d.side === 'hunter' || p.role === 'hider') && distM(p.loc, d) <= PICK_M) : null;
+      if (!d) { if (p.pickup) { p.pickup = null; send(p.ws, viewFor(L, p)); } continue; }
+      const steal = d.side === 'hunter' && p.role === 'hider';
+      if (!steal && p.held) { if (!p.fullWarned) { p.fullWarned = true; send(p.ws, { type: 'puNote', text: '🎒 Hands full — use your power-up first' }); } continue; }
+      if (!p.pickup || p.pickup.dropId !== d.id) { p.pickup = { dropId: d.id, since: t }; send(p.ws, viewFor(L, p)); continue; }
+      if (t - p.pickup.since < pickupMs(L)) continue;
+      p.pickup = null; L.drops.delete(d.id); p.fullWarned = false;
+      if (steal) {
+        logEv(L, 'steal', { id: p.id, lat: d.lat, lng: d.lng }, `🦝 ${p.name} destroyed a hunter drop`);
+        event(L, '🦝 A hider destroyed a hunter drop!');
+        for (const x of L.players.values()) send(x.ws, { type: 'dropFlash', lat: d.lat, lng: d.lng, name: p.name });
+        revealPing(L, p);
+      } else {
+        p.held = d.type; logEv(L, 'pickup', { id: p.id, ptype: d.type, lat: d.lat, lng: d.lng }, `${PU.INFO[d.type][0]} ${p.name} picked up ${PU.INFO[d.type][1]}`);
+        send(p.ws, { type: 'puGot', ptype: d.type });
+      }
+      broadcast(L);
+    }
+  }
+  function tickPowerups(L) {
+    const t = now();
+    if (inCompass(L)) { if (L.drops.size) { L.drops.clear(); broadcast(L); } return; } // nothing in sudden death
+    for (const [id, d] of L.drops) if (t >= d.expiresAt) { L.drops.delete(id); broadcast(L); }
+    if (L.nextDropAt && t >= L.nextDropAt) {
+      L.nextDropAt = t + dropEvery(L);
+      if (spawnDrop(L, L.dropSide)) broadcast(L);
+      L.dropSide = L.dropSide === 'hider' ? 'hunter' : 'hider';
+    }
+    if (L.shrink && t >= L.shrink.until) { L.shrink = null; event(L, '🎯 Shrink Zone ended — field back to normal'); broadcast(L); }
+    checkPickups(L);
+    if (t >= L.nextHoundAt) { L.nextHoundAt = t + Math.max(200, 1000 * Math.min(1, scale(L) * 4));
+      for (const p of L.players.values()) if (isHunter(p) && p.houndUntil > t) send(p.ws, { type: 'bloodhound', until: p.houndUntil,
+        dists: activeHiders(L).map(h => ({ id: h.id, name: h.name, d: p.loc && h.loc ? Math.round(distM(p.loc, h.loc)) : null })) }); }
+  }
+  function usePower(L, me) {
+    const t = now(), type = me.held, fail = e => send(me.ws, { type: 'error', error: e });
+    if (!type || L.state !== 'playing') return fail('No power-up to use');
+    if (inCompass(L)) return fail('No power-ups in sudden death');
+    if (me.lastUse && t - me.lastUse < puCooldown(L)) return fail(`Cooldown: ${Math.ceil((me.lastUse + puCooldown(L) - t) / 1000)} s`);
+    const hiderSide = type in PU.HIDER;
+    if (hiderSide !== (me.role === 'hider') || (me.role === 'hider' && me.caught)) return fail('You can no longer use this power-up');
+    let note = '';
+    switch (type) {
+      case 'radar': me.radarUntil = t + fxDur(L, 30); break;
+      case 'jammer': L.jamUntil = t + fxDur(L, 60); break;
+      case 'silent': me.silent = true; break;
+      case 'shield': if (nearestHunter(L, me, 20)) return fail('🛡️ A hunter is within 20 m — get clear first'); me.shieldUntil = t + fxDur(L, 300); break;
+      case 'extraTime': { const d = Math.max(0, Math.min(120 * sc(L), L.compassAt - t - 1000)); L.endsAt -= d; L.compassAt -= d; note = ` (−${Math.round(d / 1000)} s)`; break; }
+      case 'revive': {
+        const c = [...L.players.values()].filter(p => p.caught && (p.startRole || 'hider') === 'hider').sort((a, b) => a.caughtAt - b.caughtAt)[0];
+        if (!c) return fail('Nobody to revive');
+        c.caught = false; c.caughtAt = 0; c.caughtBy = null; c.role = 'hider'; c.held = null; c.houndUntil = 0; trail(L, c, true);
+        note = ` — ${c.name} is back in the game!`; send(c.ws, { type: 'revived' }); break; }
+      case 'sonar': { let n = 0;
+        for (const h of activeHiders(L)) if (me.loc && h.loc && !h.silent && distM(me.loc, h.loc) <= 75) { send(h.ws, { type: 'chime', sonar: true }); n++; }
+        for (const h of activeHiders(L)) send(h.ws, { type: 'sonar', by: me.name });
+        if (n) for (const p of hunterList(L)) send(p.ws, { type: 'chimeNearby', n });
+        send(me.ws, { type: 'puNote', text: `🔊 Sonar: ${n} hider${n === 1 ? '' : 's'} chimed within 75 m` }); break; }
+      case 'truth': L.truthNext = true; break;
+      case 'shrink': { const f = PU.shrinkField(L.field, 0.7, hunterList(L).filter(p => p.loc).map(p => p.loc), [...L.players.values()].filter(p => p.loc && !(p.role === 'hider' && p.caught)).map(p => p.loc));
+        if (!f) return fail('Shrink Zone needs GPS fixes'); L.shrink = { until: t + fxDur(L, 180), field: f }; break; }
+      case 'campeek': requestPhotos(L); break;
+      case 'heat': { const since = t - Math.max(10000, 120 * sc(L)), until = t + fxDur(L, 30);
+        send(me.ws, { type: 'heatTrail', until, trails: Object.fromEntries(activeHiders(L).map(h => [h.id, { name: h.name, pts: (L.trails[h.id] || []).filter(q => q[0] >= since).map(q => [q[1], q[2]]) }])) }); break; }
+      case 'hound': me.houndUntil = t + fxDur(L, 60); L.nextHoundAt = 0; break;
+    }
+    me.held = null; me.lastUse = t; me.used++;
+    const [icon, label] = PU.INFO[type], who = hiderSide ? 'A hider' : me.name;
+    logEv(L, 'power', { id: me.id, ptype: type, side: hiderSide ? 'hider' : 'hunter' }, `${icon} ${me.name} used ${label}${note}`);
+    event(L, `${icon} ${who} used ${label}!${note}`);
+    for (const p of L.players.values()) send(p.ws, { type: 'powerUsed', ptype: type, side: hiderSide ? 'hider' : 'hunter', who, icon, label, note, mine: p === me });
+    broadcast(L);
+  }
+  function shieldBlocks(L, h, by) {
+    if (!(h.shieldUntil > now())) return false;
+    h.shieldUntil = 0; logEv(L, 'power', { id: h.id, ptype: 'shieldBlock', side: 'hider' }, `🛡️ ${h.name}'s shield blocked a catch`);
+    event(L, '🛡️ Shield blocked a catch!');
+    for (const x of [h, by].filter(Boolean)) send(x.ws, { type: 'shieldBlocked', hider: h.name, by: by ? by.name : null });
+    broadcast(L); return true;
+  }
+
   function resetFeatures(L, ps) {
     L.bounty = null; L.photos = {}; L.camAt = L.compassAt = L.nextBountyAt = L.nextCompassAt = L.camDeadline = 0; L.compassAnnounced = false;
-    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; }
+    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; }
+    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null;
   }
   function rematch(L) {
     if (L.state !== 'ended') return;
@@ -414,6 +546,7 @@ function createApp(opts = {}) {
           const first = !me.loc;
           me.loc = { lat, lng, acc: clampNum(m.acc, 0, 1e5, 999), ts: Number(m.ts) || now(), recvAt: now() };
           trail(L, me);
+          if (L.state === 'playing' && L.drops.size) checkPickups(L);
           // Only hunters' live positions are pushed; hider updates trigger no broadcast with coords.
           const of = outFlag(L, me), ofChanged = of !== me.lastOut; me.lastOut = of;
           const permNew = first || me.perm !== 'granted'; me.perm = 'granted';
@@ -431,6 +564,8 @@ function createApp(opts = {}) {
           L.settings.hideSec = clampNum(s.hideSec, 0, 3600, L.settings.hideSec);
           if ('caughtBecomeHunter' in s) L.settings.caughtBecomeHunter = !!s.caughtBecomeHunter;
           if ('showRevealed' in s) L.settings.showRevealed = !!s.showRevealed;
+          if (['off', 'normal', 'chaos'].includes(s.powerups)) L.settings.powerups = s.powerups;
+          if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];
           broadcast(L);
         } break;
@@ -455,11 +590,13 @@ function createApp(opts = {}) {
           }
           const t = now(); L.startedAt = t; L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
+          L.chimeTest = null;
           L.state = L.settings.hideSec > 0 ? 'hiding' : 'playing'; L.round++; L.pings = []; L.events = [];
           for (const p of ps) { p.startRole = p.role; p.caught = false; p.caughtAt = 0; p.caughtBy = null; p.revealedAt = 0; }
           resetFeatures(L, ps); clearRound(L);
           { const sc = scale(L) * 1000, h = L.hideEndsAt;
             L.nextBountyAt = h + 300 * sc; L.camAt = h + 600 * sc; L.compassAt = h + 1080 * sc; L.nextCompassAt = 0; }
+          scheduleDrops(L);
           if (L.state === 'playing') L.nextPingAt = t + L.settings.pingSec * 1000;
           else L.nextPingAt = L.hideEndsAt + L.settings.pingSec * 1000;
           event(L, L.state === 'hiding' ? 'Hiders, go hide!' : 'Hunt is on!'); logEv(L, 'start', {}, L.state === 'hiding' ? '🙈 Head start — hiders go hide' : '🔦 Hunt is on');
@@ -480,6 +617,15 @@ function createApp(opts = {}) {
           if (host && isHunter(me)) catchHider(L, h, me); // host override: immediate
           else if (isHunter(me)) claimCatch(L, h, me, 'hunter'); break; }
         case 'caughtSelf': if (me.role === 'hider') claimCatch(L, me, null, 'hider'); break;
+        case 'usePower': usePower(L, me); break;
+        case 'chimeTest': if (host && L.state === 'lobby') { // preview on every phone; throttled to once per 1.5 s
+          const t = now(); if (t - (L.chimeTestAt || 0) < CHIME_THROTTLE) break;
+          if ('vol' in m) L.settings.chimeVol = Math.round(clampNum(m.vol, 10, 100, L.settings.chimeVol));
+          L.chimeTestAt = t; L.chimeTest = { id: rid(3), vol: L.settings.chimeVol, votes: new Map() };
+          for (const p of L.players.values()) send(p.ws, { type: 'chimeTest', id: L.chimeTest.id, vol: L.settings.chimeVol });
+          broadcast(L);
+        } break;
+        case 'chimeVote': if (L.state === 'lobby' && L.chimeTest && m.id === L.chimeTest.id && ['good', 'quiet', 'loud'].includes(m.vote)) { L.chimeTest.votes.set(me.id, m.vote); broadcast(L); } break;
         case 'catchAnswer': answerCatch(L, me, m.pid, !!m.yes); break;
         case 'recap': { const r = buildRecap(L); if (r) send(ws, { type: 'recap', recap: r }); break; }
         case 'hlUpload': { // opt-in highlight cuts for the host's group reel (memory only, 30 min / Play again)
@@ -507,7 +653,7 @@ function createApp(opts = {}) {
   wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); });
   const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
   server.on('close', () => { clearInterval(timer); clearInterval(hb); });
-  return { app, server, wss, lobbies, refs, tick, spawnBounty, distM, oobGrace, buildRecap };
+  return { app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
 module.exports = { createApp, distM, bearingDeg, offsetM };

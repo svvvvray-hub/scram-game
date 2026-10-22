@@ -41,12 +41,24 @@ function handle(m) {
   else if (m.type === 'left') { resetLocal(); toast('You left the lobby'); }
   else if (m.type === 'gone') { toast(m.kicked ? 'Removed from lobby' : 'Lobby closed'); sess = null; S = null; localStorage.removeItem('scram'); show('home'); }
   else if (m.type === 'ping') { if (m.locs) { nearestId = m.nearest || null; toast(`📡 Ping #${m.n}: hider locations updated`); if (S && S.state === 'playing') { S.last = S.last || {}; for (const [id, l] of Object.entries(m.locs)) if (l) S.last[id] = { ...l, t: m.t }; for (const id of m.hidden || []) delete S.last[id]; S.pingCount = m.n; render(); } } else if (S && me()?.role === 'hider') { toast(m.out ? `💰 Surprise ping — a hunter grabbed the bounty and saw you!` : `📡 Ping #${m.n} — hunters just saw your location!`, 4000); navigator.vibrate?.(300); } }
-  else if (m.type === 'chime') { playChime(); navigator.vibrate?.([200, 100, 200]); toast('🔔 You chimed! A hunter is within 40 m', 5000); fx('🔔 You chimed at the last ping — a hunter is close!'); }
+  else if (m.type === 'chime') { playChime(); toast(m.sonar ? '🔊 Sonar made you chime! A hunter is within 75 m' : '🔔 You chimed! A hunter is within 40 m', 5000); fx('🔔 You chimed at the last ping — a hunter is close!'); }
   else if (m.type === 'chimeNearby') { const e = $('chimeNote'); e.textContent = `🔔 ${m.n > 1 ? m.n + ' hiders' : 'A hider'} chimed nearby!`; e.classList.remove('hidden'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.add('hidden'), 15000); toast(e.textContent, 4000); }
   else if (m.type === 'bounty') { toast(m.effect === 'wipe' ? '💰 Bounty! Your next ping is wiped — hunters will see nothing.' : '💰 Bounty! Surprise ping of all hiders.', 5000); if (m.effect === 'wipe') fx('💰 Cloaked: your next ping is wiped.'); }
   else if (m.type === 'camRequest') takePhoto();
   else if (m.type === 'infected') { toast('🧟 You were caught — you are now a HUNTER! You will get pings now.', 6000); navigator.vibrate?.([300, 100, 300]); }
   else if (m.type === 'catchPrompt') { navigator.vibrate?.([200, 100, 200]); toast(m.by === 'hider' ? `🙋 ${m.hider} says they were caught — confirm?` : `🎯 ${m.hunter} says they caught you — confirm?`, 5000); }
+  else if (m.type === 'chimeTest') { chimeTestId = m.id; window.lastChimeTest = { id: m.id, vol: m.vol, at: Date.now(), unlocked: audioReady() };
+    if (audioReady()) playChime({ vol: m.vol }); else $('soundUnlock').classList.remove('hidden'); renderChimeVote(m); }
+  else if (m.type === 'drop') toast(m.side === 'hider' ? '🎁 A hider power-up dropped — only hiders can see it!' : '⚡ A hunter power-up dropped!', 4000);
+  else if (m.type === 'puGot') { const [i, l] = PU_INFO[m.ptype] || ['🎁', m.ptype]; toast(`${i} Got ${l}! Tap to use it.`, 4000); navigator.vibrate?.(150); }
+  else if (m.type === 'puNote') toast(m.text, 4000);
+  else if (m.type === 'powerUsed') toast(m.mine ? `${m.icon} You used ${m.label}!${m.note || ''}` : `${m.icon} ${m.who} used ${m.label}!${m.note || ''}`, 4000);
+  else if (m.type === 'sonar') { const e = $('sonarAlert'); e.textContent = `🔊 A hunter used Sonar! (${m.by})`; e.classList.remove('hidden'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.add('hidden'), 4000); toast(`🔊 ${m.by} used Sonar!`, 4000); navigator.vibrate?.([300, 100, 300]); }
+  else if (m.type === 'revived') toast('💖 You were revived — you are a hider again! Run!', 6000);
+  else if (m.type === 'shieldBlocked') toast(`🛡️ Shield blocked! ${m.hider} can't be caught this time`, 5000);
+  else if (m.type === 'dropFlash') { flashSpot(m); toast(`🦝 A hider destroyed a hunter drop${me()?.role === 'hunter' ? ` — ${m.name} was pinged!` : ''}`, 5000); }
+  else if (m.type === 'heatTrail') { heatData = m; renderHeatTrail(); setTimeout(() => { heatData = null; renderHeatTrail(); }, Math.max(1000, m.until - tnow())); }
+  else if (m.type === 'bloodhound') { houndData = m; renderHound(); }
   else if (m.type === 'recap') { window.RecapUI?.set(m.recap); }
   else if (m.type === 'hlAck' || m.type === 'hlAll') window.Reel?.onMsg(m);
   else if (m.type === 'camPeek') { photos[m.id] = m; renderPhotos(); if (m.data || m.unavailable) toast(`📷 Sneak peek: ${m.name}${m.data ? '' : ' — photo unavailable'}`); }
@@ -55,6 +67,42 @@ function handle(m) {
   else if (m.type === 'state') { offset = m.serverNow - Date.now(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); }
 }
 const me = () => S && S.players.find(p => p.id === S.you);
+const PU_INFO = { radar: ['📡', 'Hunter Radar'], jammer: ['📵', 'Jammer'], silent: ['🤫', 'Silent Shoes'], shield: ['🛡️', 'Shield'], extraTime: ['⏩', 'Extra Time'], revive: ['💖', 'Revive'],
+  sonar: ['🔊', 'Sonar'], truth: ['🔍', 'Truth Ping'], shrink: ['🎯', 'Shrink Zone'], campeek: ['📷', 'Cam Peek+'], heat: ['🔥', 'Heat Trail'], hound: ['🐕', 'Bloodhound'] };
+let heatData = null, houndData = null, heatLayer = null, dropLayers = {};
+function flashSpot(m) { if (!map) return; const c = L.circle([m.lat, m.lng], { radius: 40, color: '#ef4444', weight: 4, fillOpacity: .4, className: 'dropFlash' }).addTo(map); setTimeout(() => c.remove(), 5000); }
+function renderHeatTrail() {
+  if (heatLayer) { heatLayer.remove(); heatLayer = null; } if (!heatData || !map) return;
+  heatLayer = L.layerGroup().addTo(map); let i = 0;
+  for (const [id, h] of Object.entries(heatData.trails)) { const c = COLORS[i++ % COLORS.length]; if (h.pts.length > 1) L.polyline(h.pts, { color: c, weight: 6, opacity: .7, dashArray: '2 8' }).addTo(heatLayer);
+    if (h.pts.length) L.circleMarker(h.pts.at(-1), { radius: 6, color: c }).bindTooltip('🔥 ' + esc(h.name), { permanent: true }).addTo(heatLayer); }
+}
+function renderHound() {
+  const on = houndData && houndData.until > tnow() && me()?.role === 'hunter' && S?.state === 'playing';
+  $('houndBox').classList.toggle('hidden', !on); if (!on) return;
+  $('houndBox').innerHTML = `<b>🐕 Bloodhound</b> <span class="note">${Math.ceil((houndData.until - tnow()) / 1000)} s</span><br>` + houndData.dists.map(d => `${esc(d.name)}: <b>${d.d == null ? '?' : d.d + ' m'}</b>`).join(' · ');
+}
+function renderPower() {
+  const pu = S.pu, on = S.state === 'playing' && pu && (pu.held || pu.cooldownUntil > tnow() || pu.shieldUntil > tnow() || pu.radarUntil > tnow());
+  $('puBox').classList.toggle('hidden', !on); if (!on) return;
+  const cd = Math.max(0, pu.cooldownUntil - tnow()), sd = !!S.compass;
+  if (pu.held) { const [i, l] = PU_INFO[pu.held]; $('btnPower').textContent = sd ? `${i} ${l} — not in sudden death` : cd ? `${i} ${l} — cooldown ${Math.ceil(cd / 1000)} s` : `${i} Use ${l}`; $('btnPower').disabled = sd || cd > 0; $('btnPower').classList.remove('hidden'); }
+  else $('btnPower').classList.add('hidden');
+  const fx = []; if (pu.radarUntil > tnow()) fx.push(`📡 Radar ${Math.ceil((pu.radarUntil - tnow()) / 1000)} s`); if (pu.shieldUntil > tnow()) fx.push('🛡️ Shield up'); if (pu.silent) fx.push('🤫 Silent Shoes'); if (!pu.held && cd) fx.push(`cooldown ${Math.ceil(cd / 1000)} s`);
+  $('puNote').textContent = fx.join(' · ');
+}
+function renderDrops() {
+  if (!map) return; const ds = S.state === 'playing' ? S.drops || [] : [], seen = {};
+  for (const d of ds) { seen[d.id] = 1; if (dropLayers[d.id]) continue;
+    const hider = d.side === 'hider';
+    dropLayers[d.id] = L.layerGroup([L.circle([d.lat, d.lng], { radius: 15, color: hider ? '#a855f7' : '#ef4444', weight: 2, dashArray: '4', fillOpacity: .2 }),
+      L.marker([d.lat, d.lng], { icon: L.divIcon({ className: 'dropIcon', html: hider ? '🎁' : '⚡', iconSize: [32, 32], iconAnchor: [16, 16] }) }).bindTooltip(hider ? '🎁 Hider power-up · stand here 5 s' : (me()?.role === 'hider' ? '⚡ Hunter drop · steal it (you get pinged!)' : '⚡ Hunter power-up · stand here 5 s'), { permanent: true, direction: 'top', offset: [0, -14] })]).addTo(map); }
+  for (const id in dropLayers) if (!seen[id]) { dropLayers[id].remove(); delete dropLayers[id]; }
+  const pk = S.pu?.pickup, ring = $('pickupRing');
+  ring.classList.toggle('hidden', !pk);
+  if (pk) { const k = Math.min(1, (tnow() - pk.since) / pk.need); ring.querySelector('.ring2').style.setProperty('--p', Math.round(k * 100) + '%'); $('pickupPct').textContent = Math.round(k * 100) + '%';
+    const d = ds.find(x => x.id === pk.dropId); $('pickupTxt').textContent = d && d.side === 'hunter' && me()?.role === 'hider' ? '🦝 Destroying… (you will be pinged!)' : '🎁 Picking up… stay within 15 m'; }
+}
 
 setInterval(() => {
   if (!sess || !ws || ws.readyState !== 1) return;
@@ -108,12 +156,19 @@ document.addEventListener('visibilitychange', () => {
 // ---------- audio (Web Audio, unlocked on first tap) ----------
 let actx = null;
 function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); const o = actx.createOscillator(), g = actx.createGain(); g.gain.value = 0; o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + 0.01); } catch {} }
-function playChime() {
-  if (!actx) return; actx.resume?.(); const t = actx.currentTime;
-  for (const [f, d] of [[880, 0], [1320, 0.25], [1760, 0.5]]) {
+// Soft, pleasant 3-note sine chime (residential-friendly). Volume = host's "Chime volume" (10-100 %, default 25 % = gain 0.25).
+const chimeGain = () => Math.min(1, Math.max(0.1, (S?.settings?.chimeVol ?? 25) / 100));
+const audioReady = () => !!actx && actx.state === 'running';
+let chimeTestId = null;
+function playChime(opts = {}) {
+  const vol = opts.vol ? Math.min(1, Math.max(0.1, opts.vol / 100)) : chimeGain(); window.lastChime = { gain: vol, at: Date.now() };
+  if (!opts.quiet) { navigator.vibrate?.([300, 100, 300]); const f = $('chimeFlash'); f.classList.remove('hidden'); void f.offsetWidth; clearTimeout(playChime.t); playChime.t = setTimeout(() => f.classList.add('hidden'), 900); }
+  if (!actx) unlockAudio(); if (!actx) return; actx.resume?.(); const t = actx.currentTime;
+  const master = actx.createGain(); master.gain.value = vol; master.connect(actx.destination);
+  for (const [f, d] of [[659.25, 0], [783.99, 0.22], [987.77, 0.44]]) { // E5 G5 B5, gentle attack + long decay
     const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.value = f;
-    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.5, t + d + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
-    o.connect(g).connect(actx.destination); o.start(t + d); o.stop(t + 1.5);
+    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.8, t + d + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 1.4);
+    o.connect(g).connect(master); o.start(t + d); o.stop(t + d + 1.5);
   }
 }
 document.addEventListener('pointerdown', unlockAudio, { once: true });
@@ -218,20 +273,40 @@ function renderLobby() {
     $('sHunters').max = Math.max(1, S.players.length - 1); }
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   set('sGame', +(st.gameSec / 60).toFixed(2)); set('sPing', st.pingSec); set('sHide', st.hideSec);
+  set('sPower', st.powerups || 'normal'); set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
+  $('sPower').disabled = $('sChimeVol').disabled = S.you !== S.host;
   $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed;
   for (const [f, id] of FEAT) $(id).checked = !!st.features?.[f];
   const m = me(), hider = m && m.role === 'hider';
   $('camPanel').classList.toggle('hidden', !(hider && st.features?.cam));
   if (m && camConsent && m.cam !== camConsent) sendMsg({ type: 'cam', cam: camConsent });
-  renderField();
+  renderField(); renderChimeVote();
   $('camStatus').textContent = m?.cam === 'granted' ? '✅ Ready · camera allowed' : m?.cam === 'denied' ? '✅ Ready · no camera (hunters see “photo unavailable”)' : 'Not ready yet';
 }
 const FEAT = [['decoy', 'fDecoy'], ['chime', 'fChime'], ['bounty', 'fBounty'], ['cam', 'fCam'], ['compass', 'fCompass']];
-function pushSettings() { sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked,
+function pushSettings() { sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked, powerups: $('sPower').value, chimeVol: +$('sChimeVol').value,
   features: Object.fromEntries(FEAT.map(([f, id]) => [f, $(id).checked])) } }); }
-for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
+$('sChimeVol').oninput = () => $('chimeVolLbl').textContent = $('sChimeVol').value + '%';
+for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sPower', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
 $('btnQuick').onclick = () => { $('sGame').value = 2; $('sPing').value = 10; $('sHide').value = 10; pushSettings(); toast('2-min test game: pings 10 s, bounty every 30 s, cam at 1:00, compass from 1:48'); };
 $('btnReadyCam').onclick = askCam;
+// host chime preview on every phone (lobby only): on slider release, or at most every 1.5 s while dragging
+let chimeDragAt = 0;
+function chimeAll() { sendMsg({ type: 'chimeTest', vol: +$('sChimeVol').value }); chimeDragAt = Date.now(); }
+$('sChimeVol').addEventListener('input', () => { if (Date.now() - chimeDragAt >= 1500) chimeAll(); });
+$('sChimeVol').addEventListener('change', () => { setTimeout(chimeAll, Math.max(0, 1500 - (Date.now() - chimeDragAt))); });
+$('btnChimeAll').onclick = () => { unlockAudio(); chimeAll(); };
+$('btnUnlockSound').onclick = () => { unlockAudio(); $('soundUnlock').classList.add('hidden'); setTimeout(() => playChime({ vol: window.lastChimeTest?.vol }), 80); };
+for (const b of document.querySelectorAll('[data-vote]')) b.onclick = () => { unlockAudio(); sendMsg({ type: 'chimeVote', id: chimeTestId, vote: b.dataset.vote }); };
+function renderChimeVote(m) {
+  const ct = S?.chimeTest || m; const on = S && S.state === 'lobby' && ct;
+  $('chimeVoteBox').classList.toggle('hidden', !on); if (!on) return;
+  $('chimeVoteVol').textContent = `at ${ct.vol}%`; for (const b of document.querySelectorAll('[data-vote]')) b.classList.toggle('on', S.chimeTest?.myVote === b.dataset.vote);
+  const t = S.chimeTest?.tally; $('chimeTally').textContent = t ? `👍 ${t.good} · 🔉 ${t.quiet} · 🔊 ${t.loud} (${t.good + t.quiet + t.loud}/${S.chimeTest.n})` : '';
+}
+$('btnSound').onclick = () => { unlockAudio(); playChime(); $('soundAsk').classList.remove('hidden'); $('soundTips').classList.add('hidden'); };
+$('soundYes').onclick = () => { $('soundAsk').classList.add('hidden'); toast('👍 Sound works — keep the volume up during the game'); };
+$('soundNo').onclick = () => { $('soundAsk').classList.add('hidden'); $('soundTips').classList.remove('hidden'); };
 $('btnReadyNoCam').onclick = () => { unlockAudio(); camConsent = 'denied'; localStorage.setItem('scramCam', 'denied'); sendMsg({ type: 'cam', cam: 'denied' }); };
 $('btnRandom').onclick = () => sendMsg({ type: 'randomize', hunters: +$('sHunters').value || 1 });
 $('btnStart').onclick = () => { const bad = S.players.filter(p => p.perm !== 'granted'); if (bad.length && !confirm(`${bad.map(p => p.name).join(', ')} ${bad.length > 1 ? "don't" : "doesn't"} have GPS yet. Start anyway?`)) return; sendMsg({ type: 'start' }); };
@@ -368,11 +443,13 @@ function renderGame() {
     $('revealed').textContent = S.revealedAt ? `Hunters last saw your location ${ago(S.revealedAt - offset)}.` : (S.settings.showRevealed ? 'Not revealed yet.' : '');
   }
   if (hunter) renderPhotos();
-  renderCatchBox();
+  renderCatchBox(); renderDrops(); renderPower(); renderHound();
+  document.body.classList.toggle('jammed', hunter && S.jamUntil > tnow() && S.state === 'playing');
   renderCompass();
   const ev = S.events[S.events.length - 1];
   $('banner').classList.toggle('hidden', !ev || tnow() - ev.t > 6000); if (ev) $('banner').textContent = ev.text;
 }
+$('btnPower').onclick = () => sendMsg({ type: 'usePower' });
 $('btnCaughtSelf').onclick = () => { if (confirm('Confirm you were caught?')) { sendMsg({ type: 'caughtSelf' }); toast('⏳ Waiting for a hunter to confirm (20 s)…', 4000); } };
 // pending catch claims: the other side (or the host) confirms within 20 s
 function renderCatchBox() {
@@ -405,6 +482,7 @@ setInterval(() => {
   if (S.state === 'hiding') { $('clock').textContent = fmt(S.hideEndsAt - t); $('pingClock').textContent = 'Head start'; $('hideClock').textContent = fmt(S.hideEndsAt - t); }
   else if (S.state === 'playing') { $('clock').textContent = fmt(S.endsAt - t); $('pingClock').innerHTML = S.compass ? '🧭 <b>SUDDEN<br>DEATH</b>' : `Next ping<br><b>${fmt(S.nextPingAt - t)}</b>`; }
   warnings(); oobBanner(); if (S.catches?.length) renderCatchBox();
+  if (S.state === 'playing' && map) { renderDrops(); renderPower(); renderHound(); document.body.classList.toggle('jammed', me()?.role === 'hunter' && S.jamUntil > tnow()); } else document.body.classList.remove('jammed');
 }, 250);
 function oobBanner() {
   const running = S.state === 'playing' || S.state === 'hiding', m = me(), on = running && !!S.outSince && m;

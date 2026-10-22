@@ -82,3 +82,20 @@ a.ig{color:#f472b6;font-size:.8em;margin-left:6px;text-decoration:none}
 .recapPh img{max-width:140px;border-radius:8px}
 .viral{background:linear-gradient(90deg,#ef4444,#f59e0b)}video.vertical{width:auto;max-width:100%;height:60dvh;display:block;margin:6px auto}
 .agree a,.legalLinks a{color:#93c5fd}.legalLinks{text-align:center}#recNotice{position:fixed;inset:0;background:#000a;z-index:2600;display:flex;align-items:center;justify-content:center;padding:16px}#recNotice .box{background:#1f2937;border-radius:14px;padding:16px;max-width:420px}
+
+/* v6: power-ups, chime */
+.power{background:linear-gradient(90deg,#7c3aed,#db2777)}.power:disabled{background:#4b5563;opacity:.6}
+#pickupRing{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:1200;text-align:center;pointer-events:none}
+#pickupRing .ring2{width:110px;height:110px;border-radius:50%;background:conic-gradient(#a855f7 var(--p,0%),#1f2937aa 0);display:flex;align-items:center;justify-content:center;margin:auto;box-shadow:0 0 0 6px #0008}
+#pickupRing .ring2 span{background:#111827;border-radius:50%;width:80px;height:80px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.3em}
+#pickupTxt{background:#000b;padding:4px 10px;border-radius:8px;margin-top:6px;font-weight:700}
+.dropIcon{font-size:28px;filter:drop-shadow(0 0 6px #fff)}.dropFlash{animation:dflash .4s 6 alternate}@keyframes dflash{from{opacity:1}to{opacity:.1}}
+body.jammed #map{filter:blur(5px) hue-rotate(90deg);animation:jit .25s infinite}@keyframes jit{0%{transform:translate(0,0)}50%{transform:translate(3px,-2px)}100%{transform:translate(-2px,2px)}}
+body.jammed #arrow{animation:spin .6s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+#sonarAlert{position:fixed;inset:30% 8% auto 8%;z-index:2100;background:#b91c1c;color:#fff;font-size:1.5em;font-weight:900;text-align:center;padding:24px;border-radius:16px;box-shadow:0 0 0 8px #fca5a588;animation:pulse 0.6s infinite alternate}
+@keyframes pulse{from{opacity:1}to{opacity:.75}}
+#chimeFlash{position:fixed;inset:0;z-index:3000;background:#fde047;pointer-events:none;animation:cflash .9s forwards}@keyframes cflash{0%{opacity:.6}100%{opacity:0}}
+.houndBox{background:#1f2937;border-radius:10px;padding:8px;margin:6px 0}.soundBox{margin:10px 0}
+select{display:block;width:100%;font-size:18px;padding:10px;border-radius:10px;background:#1f2937;color:#fff;border:1px solid #374151;margin-top:4px}
+input[type=range]{padding:0}
+.chimeVoteBox{background:#1e3a8a;border-radius:12px;padding:10px;margin:10px 0}.chimeVoteBox button.on{background:#16a34a}
