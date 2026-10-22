@@ -8,6 +8,8 @@ const QRCode = require('qrcode');
 const Field = require('./public/field');
 const Recap = require('./public/recap');
 const PU = require('./powerups');
+const { createStats } = require('./stats');
+const Admin = require('./admin');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
 const MAX_GAME_MS = 6 * 3600 * 1000;
@@ -20,6 +22,7 @@ const HL_MAX = 15 * 1024 * 1024, HL_CUT_MAX = 3 * 1024 * 1024;
 
 const rid = (n = 16) => crypto.randomBytes(n).toString('hex');
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const BUSY_MSG = 'Last Ping is busy right now. Try again in a few minutes!';
 function makeCode(lobbies) {
   let c;
   do { c = Array.from({ length: 5 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join(''); } while (lobbies.has(c));
@@ -68,11 +71,17 @@ function createApp(opts = {}) {
   const refs = new Map(), env = opts.env || process.env;
   const DEFAULT_MODE = MODES[opts.defaultMode ?? env.SCRAM_DEFAULT_MODE] ? (opts.defaultMode ?? env.SCRAM_DEFAULT_MODE) : 'classic'; // test hook: legacy suites use 'custom' (everything on)
   const MAX_PLAYERS = Math.round(clampNum0(opts.maxPlayers ?? env.MAX_PLAYERS, 2, 500, 20)); // per lobby
-  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = Recap.igHandle(req.query.ref); if (h) { refs.set(h, (refs.get(h) || 0) + 1); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
+  const stats = opts.stats || createStats({ file: opts.statsFile !== undefined ? opts.statsFile : process.env.NODE_TEST_CONTEXT ? null : (env.STATS_FILE || path.join(__dirname, 'data', 'stats.json')),
+    now, throttleMs: opts.statsThrottleMs ?? 5000, maxGames: Math.round(clampNum0(env.MAX_GAMES, 0, 100000, 50)) });
+  const liveCounts = () => { let games = 0, playing = 0, players = 0, online = 0; for (const L of lobbies.values()) { if (L.state === 'ended') continue; games++; if (L.state === 'playing' || L.state === 'hiding') playing++;
+    for (const p of L.players.values()) { players++; if (p.ws) online++; } } return { games, playing, players, online }; };
+  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = Recap.igHandle(req.query.ref); if (h) { refs.set(h, (refs.get(h) || 0) + 1); stats.visit(h); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
   const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
     return /^https?:/i.test(base) ? u.toString() : u.pathname + u.search; };
-  app.get('/play', (req, res) => res.redirect(302, playTarget({ ref: Recap.igHandle(req.query.ref) })));
+  app.get('/play', (req, res) => { stats.playClick(); res.redirect(302, playTarget({ ref: Recap.igHandle(req.query.ref) })); });
   app.get('/p/:code', (req, res) => res.redirect(302, playTarget({ code: String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), ref: Recap.igHandle(req.query.ref) })));
+  Admin.mount(app, { env, stats, liveCounts });
+  app.post('/api/share', express.json({ limit: '1kb' }), (req, res) => { stats.share(String(req.body?.k || '')); res.status(204).end(); });
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
   app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
   app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
@@ -542,12 +551,16 @@ function createApp(opts = {}) {
       let m; try { m = JSON.parse(raw); } catch { return; }
       if (!me) {
         if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
-        if (m.type === 'create') { L = newLobby(); me = addPlayer(L, m.name, m.ig); }
+        const dev = typeof m.dev === 'string' ? m.dev : null, ref = Recap.igHandle(m.ref || '') || null;
+        if (m.type === 'create') {
+          if (stats.canCreate(liveCounts().games)) return send(ws, { type: 'error', error: BUSY_MSG, busy: true });
+          L = newLobby(); me = addPlayer(L, m.name, m.ig); stats.gameCreated(dev, ref);
+        }
         else if (m.type === 'join') {
           L = lobbies.get(String(m.code || '').toUpperCase());
           if (!L) return send(ws, { type: 'error', error: 'Lobby not found' });
           if (L.players.size >= MAX_PLAYERS) { const n = L.players.size; L = null; return send(ws, { type: 'error', error: `Lobby is full (${n}/${MAX_PLAYERS})`, full: true }); }
-          me = addPlayer(L, m.name, m.ig);
+          me = addPlayer(L, m.name, m.ig); stats.player(dev, ref);
           if (L.state === 'playing' || L.state === 'hiding') me.role = 'hunter'; // late joiners hunt (can't be fairly hidden)
         } else if (m.type === 'rejoin') {
           L = lobbies.get(String(m.code || '').toUpperCase());
@@ -619,7 +632,7 @@ function createApp(opts = {}) {
             const outside = ps.filter(p => !p.loc || !Field.inField(L.field, p.loc)).map(p => ({ id: p.id, name: p.name, noGps: !p.loc }));
             if (outside.length) return send(ws, { type: 'startBlocked', outside });
           }
-          const t = now(); L.startedAt = t; L.hideEndsAt = t + L.settings.hideSec * 1000;
+          const t = now(); L.startedAt = t; stats.gameStarted(); L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
           L.chimeTest = null;
           L.state = L.settings.hideSec > 0 ? 'hiding' : 'playing'; L.round++; L.pings = []; L.events = [];
@@ -683,11 +696,11 @@ function createApp(opts = {}) {
   // keepalive so tunnels don't drop idle sockets
   wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); });
   const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
-  server.on('close', () => { clearInterval(timer); clearInterval(hb); });
-  return { DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
+  server.on('close', () => { clearInterval(timer); clearInterval(hb); stats.flush(); });
+  return { stats, liveCounts, DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
-module.exports = { createApp, distM, bearingDeg, offsetM };
+module.exports = { BUSY_MSG, createApp, distM, bearingDeg, offsetM };
 if (require.main === module) {
   const { server } = createApp();
   const port = process.env.PORT || 3000;

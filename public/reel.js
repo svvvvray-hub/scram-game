@@ -165,7 +165,7 @@
   function renderGroup() { const s = st(); const host = s && s.you === s.host && s.state === 'ended'; $('groupBox').classList.toggle('hidden', !host);
     if (host && !building && !group) $('groupStatus').textContent = `${s.hlCount || 0} player${s.hlCount === 1 ? '' : 's'} sent highlights`; }
   async function saveOrShare(o, share) {
-    if (!o) return; const file = new File([o.blob], o.name, { type: o.blob.type });
+    if (!o) return; if (share) window.trackShare?.('reel'); const file = new File([o.blob], o.name, { type: o.blob.type });
     if (share && navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: o.name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
     const a = document.createElement('a'); a.href = o.url; a.download = o.name; document.body.appendChild(a); a.click(); a.remove(); say('⬇ ' + o.name);
   }
@@ -283,7 +283,7 @@
   let viralOut = null;
   const shareLink = ig => (window.SHARE_LINK || location.origin + '/play') + (ig ? '?ref=' + encodeURIComponent(ig) : '');
   async function shareViral() {
-    const o = viralOut; if (!o) return; const file = new File([o.blob], o.name, { type: o.blob.type });
+    const o = viralOut; if (!o) return; window.trackShare?.('viral'); const file = new File([o.blob], o.name, { type: o.blob.type });
     if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Scram', text: `Play free at ${o.link}` }); return; } catch (e) { if (e.name === 'AbortError') return; } }
     saveOrShare(o, false);
   }

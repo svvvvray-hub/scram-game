@@ -185,3 +185,4 @@ body.inGame #recQBtn{display:none}body.inGame:not(.recording) #recDock{top:auto;
 #btnRejoin{background:#16a34a;margin-top:56px}body[data-inapp] #btnRejoin{margin-top:0}
 .btnLink,.btnLink:visited{color:#fff}
 body[data-inapp]:not(.inGame):not(.recording) #recDock{top:auto;bottom:calc(12px + env(safe-area-inset-bottom))}
+.busy{background:#78350f;border:1px solid #f59e0b;color:#fde68a;border-radius:12px;padding:12px 14px;margin:10px 0;font-weight:600;text-align:center}

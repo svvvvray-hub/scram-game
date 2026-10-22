@@ -7,3 +7,8 @@ services:
     buildCommand: npm install
     startCommand: node server.js
     healthCheckPath: /healthz
+    envVars:
+      - key: ADMIN_KEY
+        sync: false
+      - key: MAX_GAMES
+        value: "50"

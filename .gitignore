@@ -3,3 +3,4 @@ logs/
 PUBLIC_URL.txt
 run.log
 shots/
+data/

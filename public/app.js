@@ -4,6 +4,10 @@ const LEGAL_VERSION = '2026-10-22'; // bump to re-ask for 18+/Terms/Privacy cons
 const SHARE_LINK = location.origin + '/play'; // controllable redirect (server: PLAY_REDIRECT_URL); ?ref=<handle> is appended
 window.SHARE_LINK = SHARE_LINK;
 const $ = id => document.getElementById(id);
+// anonymous device id (random, no personal data) + first referrer, for aggregate growth stats
+const DEV = localStorage.getItem('scramDev') || (() => { const v = (crypto.randomUUID?.() || String(Math.random()).slice(2) + Date.now()); localStorage.setItem('scramDev', v); return v; })();
+{ const r = new URLSearchParams(location.search).get('ref'); if (r && !localStorage.getItem('scramRef')) localStorage.setItem('scramRef', r.slice(0, 40)); }
+window.trackShare = k => { try { navigator.sendBeacon?.('/api/share', new Blob([JSON.stringify({ k })], { type: 'application/json' })); } catch {} };
 const COLORS = ['#3b82f6', '#a855f7', '#14b8a6', '#eab308', '#ec4899', '#22c55e', '#f43f5e', '#06b6d4'];
 let ws, S = null, sess = JSON.parse(localStorage.getItem('scram') || 'null'), offset = 0, watchId = null, myLoc = null;
 let dismissedRound = -1, viewingEnd = false, lastRound = -1, endLayer = null, lastMsgAt = Date.now(), syncSentAt = 0;
@@ -40,7 +44,7 @@ const sendMsg = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
 function handle(m) {
   if (m.type === 'session') { if (m.ok && m.state !== 'ended') showRejoin(m); else { $('btnRejoin').classList.add('hidden'); if (!m.ok) { sess = null; localStorage.removeItem('scram'); } } }
   else if (m.type === 'joined') { $('btnRejoin').classList.add('hidden'); sess = { code: m.code, token: m.token, id: m.id, at: Date.now() }; localStorage.setItem('scram', JSON.stringify(sess)); history.replaceState(null, '', '/?code=' + m.code); startGps(); maybeSend(true); }
-  else if (m.type === 'error') { toast(m.error, 4000); if (m.reset) { sess = null; localStorage.removeItem('scram'); show('home'); } }
+  else if (m.type === 'error') { if (m.busy) { $('busyMsg').textContent = m.error; $('busyMsg').classList.remove('hidden'); } else toast(m.error, 4000); if (m.reset) { sess = null; localStorage.removeItem('scram'); show('home'); } }
   else if (m.type === 'left') { resetLocal(); toast('You left the lobby'); }
   else if (m.type === 'gone') { toast(m.kicked ? 'Removed from lobby' : 'Lobby closed'); sess = null; S = null; localStorage.removeItem('scram'); show('home'); }
   else if (m.type === 'need_fix') freshFix();
@@ -268,9 +272,9 @@ function go(type) {
   const igRaw = $('ig').value.trim(), ig = Recap.igHandle(igRaw);
   if (igRaw && !ig) return toast('Instagram handle: letters, numbers, . and _ (max 30)');
   if (ig) localStorage.setItem('scramIg', ig); else localStorage.removeItem('scramIg');
-  const msg = type === 'create' ? { type, name, ig, agreed: true, legal: LEGAL_VERSION } : { type, name, ig, agreed: true, legal: LEGAL_VERSION, code: $('code').value.trim().toUpperCase() };
+  const msg = type === 'create' ? { type, name, ig, agreed: true, legal: LEGAL_VERSION, dev: DEV, ref: localStorage.getItem('scramRef') || '' } : { type, name, ig, agreed: true, legal: LEGAL_VERSION, dev: DEV, ref: localStorage.getItem('scramRef') || '', code: $('code').value.trim().toUpperCase() };
   if (type === 'join' && msg.code.length < 4) return toast('Enter the join code');
-  startGps(); wake(); unlockAudio();
+  $('busyMsg').classList.add('hidden'); startGps(); wake(); unlockAudio();
   if (ws?.readyState === 1) sendMsg(msg); else pendingAction = msg;
 }
 // rules in an in-app iframe sheet: the lobby and its WebSocket stay put

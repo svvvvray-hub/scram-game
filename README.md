@@ -328,3 +328,17 @@ that forces drop types): `PORT=3001 SCRAM_TEST_PU=hider:radar,hunter:sonar node 
 - `public/inapp.js` — `InApp.detect(ua)` → `{ inApp, app, os }` (Zalo, Facebook, Instagram, Messenger, Line, TikTok, WeChat, Snapchat, Android `; wv)`), `InApp.chromeIntent(href)` → Chrome `intent://` URL keeping the code/ref query. Android shows **Open in Chrome**; iOS shows an arrow + "tap ⋯ / share → Open in Safari" + Copy link. The × minimizes; the banner stays on the join screen.
 - Rejoin: `localStorage.scram = { code, token, id }`. Auto-rejoin on load (same/no invite code), socket reconnect, visibilitychange and bfcache `pageshow`; opening a different link sends `peek` and shows a **Rejoin game** button. Server keeps a disconnected slot (role, team, caught state) for the lobby's life (≥ `DISCONNECT_GRACE_MS` = 10 min); disconnecting never marks anyone caught or removed.
 - Tests: `test/inapp.test.js`, v10 case in `game.test.js`, e2e `PORT=3010 node server.js` then `node test/e2e_v10.js`.
+
+## Growth dashboard & brake switch (`/admin`)
+
+Set `ADMIN_KEY` (a long random string) to enable `/admin`. Without it, `/admin` returns 404; a wrong key returns 401.
+Sign in with the login form or open `/admin?key=YOUR_KEY` once: both set an HttpOnly cookie that holds an HMAC of the key (never the key), and the key is removed from the URL.
+
+- **Stats:** games created/started per day, unique players per day (anonymous random device id, SHA-256 hashed, no personal data), live games/players, totals, top `?ref` referrers (new players, games, visits), `/play` clicks, reel and "Make it viral" shares. Charts are inline SVG. JSON at `/admin/stats.json` (auth required).
+- **Brake switch:** pause new games, max concurrent games (default `MAX_GAMES`, 50), max new games per hour (0 = unlimited). Blocked creates show "Last Ping is busy right now. Try again in a few minutes!". Joining an existing game is never blocked, and running games keep going. Settings change only via authenticated POST `/admin/settings`.
+- **Storage:** `STATS_FILE` (default `./data/stats.json`, gitignored), written at most every 5 s and on shutdown.
+
+**Render free plan caveat:** the free instance's filesystem is ephemeral. Stats and brake settings reset on every redeploy, restart, or spin-down after idling. The brake then falls back to `MAX_GAMES`, unpaused.
+To keep the data, use one of these upgrade paths:
+1. **Render persistent disk** (paid instance): add a disk (for example, mount path `/var/data`) and set `STATS_FILE=/var/data/stats.json`. No code changes are needed.
+2. **Free hosted database** (for example Neon Postgres, Upstash Redis, or Turso): replace `load`/`flush` in `stats.js` with reads and writes of the same JSON blob. This needs one client library, so it isn't included by default.
