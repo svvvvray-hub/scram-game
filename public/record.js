@@ -83,8 +83,8 @@
     if (on) { const s = Math.floor((Date.now() - t0) / 1000); $('recTime').textContent = `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
       $('recMode').textContent = dual ? 'DUAL' : side(facing).toUpperCase(); $('recFlip').classList.toggle('hidden', dual); }
     document.body.classList.toggle('inGame', !$('game').classList.contains('hidden'));
-    if (document.body.classList.contains('recording') !== on) { document.body.classList.toggle('recording', on); setTimeout(fixMap, 50); setTimeout(fixMap, 400); }
-    $('recPreview').classList.toggle('hidden', !on); setPreview();
+    if (document.body.classList.contains('recording') !== on) { document.body.classList.toggle('recording', on); $('recPreview').classList.toggle('hidden', !on); layout(); setTimeout(fixMap, 50); }
+    $('recPreview').classList.toggle('hidden', !on); setPreview(); if (on) { layout(); centerBubble(); }
     $('clipsBtn').classList.toggle('hidden', !clips.length); $('clipsBtn').textContent = `🎞 ${clips.length}`;
   }
   function renderList() {
@@ -102,6 +102,39 @@
     });
     renderUi();
   }
+  // radar layout: camBig (default) = camera full screen + map bubble; else map full + camera bubble. Remembered per session.
+  const ss = window.sessionStorage; let camBig = ss?.getItem('scramBig') !== 'map', corner = ss?.getItem('scramCorner') || 'br';
+  function layout() {
+    const on = document.body.classList.contains('recording'), map_ = $('map'), pv = $('recPreview'), hit = $('bubbleHit');
+    map_.classList.toggle('radarBubble', on && camBig); pv.classList.toggle('radarBubble', on && !camBig); const inG = !$('game').classList.contains('hidden'); hit.classList.toggle('hidden', !on || !inG);
+    if (!on || document.body.classList.contains('dragging')) return;
+    const st = document.body.style, vw = innerWidth, vh = innerHeight, hud = $('hud').getBoundingClientRect(), bot = $('bottom').getBoundingClientRect();
+    const hudB = $('game').classList.contains('hidden') ? 0 : Math.max(hud.bottom, $('banner').getBoundingClientRect().bottom, $('oob').getBoundingClientRect().bottom);
+    st.setProperty('--dockTop', (hudB + 6) + 'px');
+    const top = $('recDock').getBoundingClientRect().bottom + 8, bottom = ($('game').classList.contains('hidden') || !bot.height ? vh : bot.top) - 8;
+    const size = Math.max(90, Math.min(vw * .45, bottom - top)), r = corner[1] === 'r';
+    st.setProperty('--top', top + 'px'); st.setProperty('--bs', size + 'px');
+    st.setProperty('--bx', (r ? vw - size - 10 : 10) + 'px'); st.setProperty('--by', (corner[0] === 'b' ? bottom - size : top) + 'px');
+  }
+  function centerBubble() { try { if (camBig && map && typeof myLoc !== 'undefined' && myLoc) map.setView([myLoc.lat, myLoc.lng], Math.max(map.getZoom(), 16), { animate: false }); } catch {} }
+  function swap() {
+    camBig = !camBig; try { ss?.setItem('scramBig', camBig ? 'cam' : 'map'); } catch {}
+    document.body.classList.add('swapAnim'); layout(); fixMap(); centerBubble();
+    clearTimeout(swap.t); swap.t = setTimeout(() => { document.body.classList.remove('swapAnim'); fixMap(); centerBubble(); }, 200);
+  }
+  function bubbleDrag(hit) {
+    let d = null; const TH = 10;
+    hit.addEventListener('pointerdown', e => { d = { x: e.clientX, y: e.clientY, moved: false, bx: parseFloat(document.body.style.getPropertyValue('--bx')), by: parseFloat(document.body.style.getPropertyValue('--by')) }; hit.setPointerCapture?.(e.pointerId); e.preventDefault(); });
+    hit.addEventListener('pointermove', e => { if (!d) return; const dx = e.clientX - d.x, dy = e.clientY - d.y;
+      if (!d.moved && Math.hypot(dx, dy) < TH) return; d.moved = true; document.body.classList.add('dragging');
+      document.body.style.setProperty('--bx', (d.bx + dx) + 'px'); document.body.style.setProperty('--by', (d.by + dy) + 'px'); });
+    const up = e => { if (!d) return; const m = d.moved, x = e.clientX, y = e.clientY; d = null; document.body.classList.remove('dragging');
+      if (!m) return swap();
+      corner = (y < innerHeight / 2 ? 't' : 'b') + (x < innerWidth / 2 ? 'l' : 'r'); try { ss?.setItem('scramCorner', corner); } catch {}
+      document.body.classList.add('swapAnim'); layout(); setTimeout(() => { document.body.classList.remove('swapAnim'); fixMap(); }, 200); };
+    hit.addEventListener('pointerup', up); hit.addEventListener('pointercancel', e => { d && (d.moved = true); up(e); });
+  }
+  addEventListener('resize', () => { layout(); fixMap(); });
   function fixMap() { try { if (typeof map !== 'undefined' && map) map.invalidateSize(); if (typeof fieldMap !== 'undefined' && fieldMap) fieldMap.invalidateSize(); } catch {} }
   function setPreview() {
     const back = sessions.find(x => x.facing === 'environment'), front = sessions.find(x => x.facing === 'user');
@@ -118,7 +151,7 @@
     if (init.done || !$('recBtn')) return; init.done = true;
     $('recBtn').onclick = start; $('recStop').onclick = stopAll; $('recFlip').onclick = flip;
     $('clipsBtn').onclick = () => { renderList(); $('clipSheet').classList.remove('hidden'); };
-    $('clipClose').onclick = () => $('clipSheet').classList.add('hidden'); renderUi(); setInterval(() => document.body.classList.toggle('inGame', !$('game').classList.contains('hidden')), 500);
+    bubbleDrag($('bubbleHit')); $('clipClose').onclick = () => $('clipSheet').classList.add('hidden'); renderUi(); setInterval(() => document.body.classList.toggle('inGame', !$('game').classList.contains('hidden')), 500);
   }
-  window.Rec = { start, stop: stopAll, flip, backStream, clips, get recording() { return sessions.length > 0; }, get dual() { return dual; }, pickMime };
+  window.Rec = { start, stop: stopAll, flip, backStream, clips, get recording() { return sessions.length > 0; }, get dual() { return dual; }, pickMime, swap, get camBig() { return camBig; } };
 })();

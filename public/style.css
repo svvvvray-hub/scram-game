@@ -51,10 +51,20 @@ button:disabled{opacity:.5}
 .recBar b{color:#ef4444}.recDot{width:12px;height:12px;border-radius:50%;background:#ef4444;animation:blink 1s infinite}@keyframes blink{50%{opacity:.2}}
 #clipSheet{position:fixed;left:0;right:0;bottom:0;max-height:60dvh;overflow:auto;background:#1f2937;border-radius:16px 16px 0 0;padding:12px 14px;z-index:1900;box-shadow:0 -4px 20px #0008}
 .sheetHead{display:flex;justify-content:space-between;align-items:center}#clipList li{flex-wrap:wrap;font-size:.85em}.dl{color:#fff;background:#16a34a;border-radius:10px;text-decoration:none}
-#recPreview{position:fixed;left:0;right:0;top:0;height:50dvh;background:#000;z-index:1400;overflow:hidden}
-#recVid{width:100%;height:100%;object-fit:cover;display:block}#recPip{position:absolute;right:10px;bottom:10px;width:28%;aspect-ratio:3/4;object-fit:cover;border:2px solid #fff;border-radius:10px}
-#recPreview .recBar{position:absolute;left:10px;right:10px;top:max(10px,env(safe-area-inset-top));flex-direction:row;justify-content:space-between}
-body.recording #app{position:fixed;left:0;right:0;top:50dvh;height:50dvh;overflow:auto}body.recording .full{height:50dvh}
-body.recording #map{min-height:80px}body.recording #bottom{max-height:24dvh}body.recording #hideCover{inset:auto 0 0 0;height:30dvh;top:auto}
-body.recording #recDock{top:calc(50dvh + 60px)}
 body.inGame #recDock{top:38%}
+
+/* v6 radar layout while recording: one full-screen view + one round bubble (tap = swap, drag = snap to corner) */
+#recPreview{position:fixed;left:0;top:0;width:100vw;height:100dvh;background:#000;z-index:1400;overflow:hidden}
+#recVid{width:100%;height:100%;object-fit:cover;display:block}#recPip{position:absolute;left:10px;top:var(--top,120px);width:24%;aspect-ratio:3/4;object-fit:cover;border:2px solid #fff;border-radius:10px}
+body.recording #map{position:fixed!important;left:0;top:0;width:100vw;height:100dvh;min-height:0;z-index:1300}
+body.recording #game{background:transparent}body.recording #bottom{margin-top:auto;position:relative;z-index:1500}
+body.recording #hud,body.recording #banner,body.recording #oob{position:relative;z-index:1500}body.recording #hideCover{z-index:1490}
+body.recording #recDock{position:fixed;left:8px;right:8px;top:var(--dockTop,60px);align-items:stretch}
+body.recording .recBar{flex-direction:row;justify-content:space-between}
+.radarBubble{left:var(--bx)!important;top:var(--by)!important;width:var(--bs)!important;height:var(--bs)!important;border-radius:50%;z-index:1450!important;border:3px solid #facc15;box-shadow:0 0 0 3px #0008,0 6px 20px #000a;overflow:hidden}
+body.swapAnim #map,body.swapAnim #recPreview{transition:left .18s ease,top .18s ease,width .18s ease,height .18s ease,border-radius .18s ease}
+#map.radarBubble{opacity:.85}#map.radarBubble .leaflet-control-attribution,#map.radarBubble .leaflet-tooltip{display:none}
+#map.radarBubble path.leaflet-interactive{stroke-width:5px}#map.radarBubble .bountyIcon{font-size:1.4em}
+#recPreview.radarBubble #recPip{left:50%;top:auto;bottom:6%;width:28%;transform:translateX(-50%)}
+#bubbleHit{position:fixed;left:var(--bx);top:var(--by);width:var(--bs);height:var(--bs);border-radius:50%;z-index:1460;touch-action:none;cursor:pointer}
+body.dragging #map,body.dragging #recPreview{transition:none}

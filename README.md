@@ -91,7 +91,7 @@ everything outside.
 
 ## Recording (v5) — client-only clips, never uploaded
 - Floating **⏺ Record** button (top-right in the lobby, right edge mid-map in game). Records the back camera (`facingMode: environment`) + mic with `MediaRecorder`; mimeType picked from `video/mp4`, `video/webm;codecs=vp9`, `vp8`.
-- While recording the screen splits: live preview on top (REC dot, timer, 🔄 Flip, ⏹ Stop over it), map + HUD/decoy/caught buttons below (map `invalidateSize()` on every layout change). Stop returns the map to full screen.
+- While recording (v6 **radar layout**, mockup option 3): one view is full screen and the other sits in a round bubble (~45% width) in a corner. Default: camera full screen, map in the bubble (85% opaque, auto-centered on you, bold markers/boundary). **Tap the bubble** to swap instantly (camera ↔ map): the existing `<video>` and Leaflet map are just restyled with a 180 ms CSS transition — the camera isn't re-opened and the map isn't re-created; `map.invalidateSize()` runs after each swap. **Drag** the bubble (10 px drag-vs-tap threshold) to snap it to any corner. The choice and corner are remembered for the session (`sessionStorage`). HUD (timer, ping countdown, banners, REC bar with 🔄 Flip / ⏹ Stop, decoy/caught buttons) stays solid and the bubble is sized/placed so it never overlaps it. In dual-camera mode the front camera stays a small PiP. Stop returns the map to full screen. The old split-screen layout is gone.
 - **Flip** stops and saves the current clip and starts a new one with the other camera. Each clip is a file `scram_<code>_<role>_<back|front>_<HHMMSS>.<webm|mp4>`.
 - **Dual attempt**: on start it also opens the other camera; if both tracks stay `live` and deliver frames within ~1.5 s, two recorders run (back big, front picture-in-picture) and two files are saved. Otherwise it falls back to one camera with the toast “This phone allows one camera at a time; use Flip”.
 - Clips are auto-downloaded when finished and listed in **🎞 My clips** (Download blob link + Share via `navigator.share` files where supported). Nothing goes to the server. Leaving the page warns if recording or a clip wasn't saved.
@@ -100,7 +100,7 @@ everything outside.
 - **Limitations**: most phones (all iPhones, most Android) allow only one camera at a time, so dual mode usually falls back. iOS Safari records MP4 and may not auto-download (use Share / Download → Save to Files). Clips live in memory until saved; closing the tab or the phone killing the background tab loses them. Long clips use lots of RAM. Recording stops if the browser backgrounds the page.
 
 ### Tests
-- `node test/e2e_record.js` — fake camera/mic: denied permission, record → flip → stop (2 clips, names, size>0, auto-download, nothing uploaded), split layout, cam peek while recording, dual attempt.
+- `node test/e2e_record.js` — fake camera/mic: denied permission, record → flip → stop (2 clips, names, size>0, auto-download, nothing uploaded), radar bubble (tap swap, invalidateSize, drag snap, HUD clear of bubble, 5 rapid swaps with no new getUserMedia and recording uninterrupted; shots/radar_camera_big.png, shots/radar_map_big.png), cam peek while recording, dual attempt.
 ```
 npm test                                  # 25 unit tests (node:test, fake WebSocket clients + fake GPS)
 node test/e2e.js http://localhost:3000    # original 3-player browser e2e (rounds, rematch, leave, privacy)

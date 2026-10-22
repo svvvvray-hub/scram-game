@@ -1,5 +1,5 @@
 // E2E for client-only recording: fake camera/mic, record -> flip -> stop, dual-mode attempt, cam peek while recording.
-// Usage: node test/e2e_record.js [URL]   (default http://localhost:3000). Writes shots/record_active.png, shots/my_clips.png
+// Usage: node test/e2e_record.js [URL]   (default http://localhost:3000). Writes shots/radar_camera_big.png, shots/radar_map_big.png, shots/record_active.png, shots/my_clips.png
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
 const URL = process.argv[2] || 'http://localhost:3000';
@@ -49,10 +49,46 @@ async function open(page, url) { await page.goto(url); await page.waitForSelecto
   check(/00:0[1-9]/.test(await hider.page.textContent('#recTime')), 'timer runs: ' + await hider.page.textContent('#recTime'));
   if (!dual) check(/one camera at a time/.test(await hider.page.textContent('#toast')) || true, 'dual fallback toast');
   await sleep(600);
-  const lay = await hider.page.evaluate(() => { const p = document.getElementById('recPreview').getBoundingClientRect(), m = document.getElementById('map').getBoundingClientRect(), v = document.getElementById('recVid');
-    return { split: document.body.classList.contains('recording') && p.bottom <= m.top + 1 && m.height > 50, vid: v.videoWidth > 0, mapW: map.getSize().y === Math.round(m.height) || Math.abs(map.getSize().y - m.height) < 2 }; });
-  check(lay.split && lay.vid && lay.mapW, 'split layout: live preview on top, map below, map resized ' + JSON.stringify(lay));
-  check(await hider.page.isVisible('#clock') && await hider.page.isVisible('#btnDecoy'), 'HUD clock and decoy button usable while recording');
+  // radar layout: camera full screen + round map bubble (default), tap swaps, drag snaps, HUD solid & clear of the bubble
+  const P = hider.page;
+  await P.evaluate(() => { window._inv = 0; const o = map.invalidateSize.bind(map); map.invalidateSize = (...a) => { window._inv++; return o(...a); };
+    window._gum = 0; const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = (...a) => { window._gum++; return g(...a); }; });
+  const geo = () => P.evaluate(() => { const r = id => document.getElementById(id).getBoundingClientRect(), b = r('bubbleHit'), m = r('map'), p = r('recPreview');
+    const ov = id => { const x = r(id); return x.width && !(x.right <= b.left || x.left >= b.right || x.bottom <= b.top || x.top >= b.bottom); };
+    return { camBig: Rec.camBig, b: [b.left, b.top, b.width], mapBub: document.getElementById('map').classList.contains('radarBubble'), pvBub: document.getElementById('recPreview').classList.contains('radarBubble'),
+      mapFull: m.width >= innerWidth - 1 && m.height >= innerHeight - 1, mr: [m.left, m.top, m.width, m.height, innerWidth, innerHeight], pvFull: p.width >= innerWidth - 1 && p.height >= innerHeight - 1,
+      bubW: b.width / innerWidth, round: getComputedStyle(document.getElementById('bubbleHit')).borderRadius, op: getComputedStyle(document.getElementById('map')).opacity,
+      overlap: ['hud', 'recBar', 'bottom', 'btnDecoy', 'btnCaughtSelf'].filter(ov), vid: document.getElementById('recVid').videoWidth > 0,
+      sized: Math.abs(map.getSize().x - document.getElementById('map').clientWidth) < 2, inv: window._inv }; });
+  let g = await geo(); console.log('camBig', JSON.stringify(g));
+  check(g.camBig && g.pvFull && g.mapBub && !g.pvBub && g.vid && g.bubW > .35 && g.bubW < .5 && g.round === '50%', 'bubble present: camera full screen, round ~45% map bubble');
+  check(Math.abs(+g.op - .85) < .02, 'map bubble ~85% opaque');
+  check(!g.overlap.length, 'HUD/REC/decoy/caught do not overlap the bubble ' + g.overlap);
+  await P.screenshot({ path: 'shots/radar_camera_big.png' });
+  const inv0 = g.inv; const bx = g.b[0] + g.b[2] / 2, by = g.b[1] + g.b[2] / 2;
+  await P.mouse.click(bx, by); await sleep(350); g = await geo(); console.log('mapBig', JSON.stringify(g));
+  check(!g.camBig && g.mapFull && g.pvBub && !g.mapBub && g.sized, 'tap swaps: map full screen, camera in bubble, map sized');
+  check(g.inv > inv0, 'map.invalidateSize fired after swap');
+  check(!g.overlap.length && await P.isVisible('#btnDecoy') && await P.isVisible('#recStop') && await P.isVisible('#clock') && await P.isVisible('#pingClock'), 'HUD usable in map-big state');
+  await P.screenshot({ path: 'shots/radar_map_big.png' });
+  check(await P.evaluate(() => sessionStorage.getItem('scramBig')) === 'map', 'choice remembered for the session');
+  // drag (not a tap) to top-left: snaps to corner without swapping
+  await P.mouse.move(bx, by); await P.mouse.down(); for (let i = 1; i <= 8; i++) await P.mouse.move(bx - i * 30, by - i * 40); await P.mouse.up(); await sleep(350);
+  g = await geo(); check(!g.camBig && g.b[0] <= 12 && g.b[1] < 400, 'drag snaps bubble to top-left corner and does not count as a tap ' + g.b);
+  check(!g.overlap.length, 'bubble in top corner clear of HUD/REC bar');
+  // small move under threshold still counts as a tap
+  const cx = g.b[0] + g.b[2] / 2, cy = g.b[1] + g.b[2] / 2;
+  await P.mouse.move(cx, cy); await P.mouse.down(); await P.mouse.move(cx + 4, cy + 3); await P.mouse.up(); await sleep(300);
+  check(await P.evaluate(() => Rec.camBig), 'tiny wiggle (< threshold) counts as tap -> camera big');
+  // 5 rapid swaps: no new getUserMedia, recorders keep running, timer keeps going
+  const before = await P.evaluate(() => ({ n: Rec.clips.length, t: document.getElementById('recTime').textContent }));
+  for (let i = 0; i < 5; i++) { await P.click('#bubbleHit'); await sleep(60); }
+  await sleep(1200);
+  const after = await P.evaluate(() => ({ n: Rec.clips.length, rec: Rec.recording, gum: window._gum, t: document.getElementById('recTime').textContent, vid: document.getElementById('recVid').videoWidth > 0 }));
+  check(after.rec && after.n === before.n && after.gum === 0 && after.vid && after.t > before.t, '5 rapid swaps: recording uninterrupted, no new getUserMedia ' + JSON.stringify([before, after]));
+  check(!(await P.evaluate(() => Rec.camBig)), 'odd number of swaps -> map big');
+  await P.evaluate(() => Rec.swap()); await sleep(300);
+  check(await P.isVisible('#clock') && await P.isVisible('#btnDecoy'), 'HUD clock and decoy button usable while recording');
   await hider.page.screenshot({ path: 'shots/record_active.png' });
   // GPS + websocket keep running while recording
   const nBefore = hider.frames.filter(f => f.type === 'state').length; await sleep(1500);
