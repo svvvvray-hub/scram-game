@@ -62,10 +62,11 @@
       <label>Game length (min)<input id="sGame" type="number" min="1" step="1"></label>
       <label>Ping every (sec)<input id="sPing" type="number" min="5" step="5"></label>
       <label>Head start (sec)<input id="sHide" type="number" min="0" step="10"></label>
-      <label>Hunters (random)<input id="sHunters" type="number" min="1" value="1"></label>
+      <label>Hunters<input id="sHunters" type="number" min="1" value="1"></label>
     </div>
     <label class="chk"><input id="sBecome" type="checkbox"> 🧟 Caught hiders join the hunters (infection)</label>
-    <p class="note">Tap a role pill to switch hunter/hider (at least 1 hunter), or randomize with the hunter count above.</p>
+    <label class="chk"><input id="sManual" type="checkbox"> 🔒 Pick hunters manually (host only — players never see it)</label>
+    <p class="note" id="pickNote">🎲 Roles are dealt randomly at start.</p>
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
     <label class="chk"><input id="sMates" type="checkbox" checked> Teammates visible (hiders see fellow hiders live)</label>
     <div id="customBox" class="hidden">
@@ -82,7 +83,6 @@
       <label class="chk"><input id="fCompass" type="checkbox"> 🧭 Sudden-death compass (last 2 min)</label>
     </div></div>
     <button id="btnQuick" class="small">⚡ Quick test: 2-min game (all timings scale)</button>
-    <button id="btnRandom" class="big">🎲 Randomize roles</button>
     <button id="btnStart" class="big primary">Start game</button>
   </div>
  <div id="camPanel" class="hidden camPanel">

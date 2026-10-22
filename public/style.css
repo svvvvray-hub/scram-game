@@ -219,3 +219,4 @@ body[data-inapp]:not(.inGame):not(.recording) #recDock{top:auto;bottom:calc(12px
 @keyframes rvSnap{from{transform:scale(2.4) rotate(45deg);opacity:0}to{transform:none;opacity:1}}@keyframes rvFog{from{opacity:1;transform:scale(.8)}to{opacity:0;transform:scale(1.6)}}
 #reveal.rm *{animation:none!important}#reveal.rm::after{display:none}#reveal.rm #rvStage>*{animation:rvFade .4s ease-out both!important}#reveal.rm .rvCross,#reveal.rm .rvFog{display:none}
 @media (prefers-reduced-motion:reduce){#reveal *,#reveal::after{animation-duration:.01s!important;animation-iteration-count:1!important}#reveal #rvStage>*{animation:rvFade .4s ease-out both!important}}
+.pill.pick{background:#4b5563;border:1px dashed #fbbf24}.pill.pick.on{background:#92400e}

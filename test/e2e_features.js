@@ -44,6 +44,7 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   // 1-min game for speed: bounty @ +15 s, cam @ +30 s, compass @ +54 s
   for (const [id, v] of [['#sGame', '1'], ['#sPing', '5'], ['#sHide', '3']]) { await hunter.page.fill(id, v); await hunter.page.dispatchEvent(id, 'change'); }
   await sleep(600);
+  await hunter.page.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await hunter.page.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
   await hunter.page.click('#btnStart');
   await hunter.page.waitForFunction(() => S.state === 'playing' && S.pingCount >= 1, null, { timeout: 20000 });
   const aliceId = await alice.page.evaluate(() => S.you), bobId = await bob.page.evaluate(() => S.you);

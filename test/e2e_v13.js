@@ -14,9 +14,9 @@ let fails = 0; const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ')
     const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { latitude: lat, longitude: -0.0877, accuracy: 6 }, permissions: ['geolocation'],
       ...(rec ? { recordVideo: { dir: path.join(vdir, name), size: { width: 412, height: 915 } } } : {}) });
     await ctx.addInitScript(() => localStorage.setItem('scramTips', JSON.stringify({ decoy: 1, chime: 1, chimeHunter: 1, powerup: 1, infected: 1, hunt: 1, hide: 1, start: 1, field: 1, catch: 1 })));
-    const page = await ctx.newPage(); page.on('pageerror', e => errs.push(name + ': ' + e.message)); page.on('dialog', d => d.accept());
+    const page = await ctx.newPage(); const frames = []; page.on('websocket', ws => ws.on('framereceived', f => frames.push({ t: Date.now(), d: String(f.payload) }))); page.on('pageerror', e => errs.push(name + ': ' + e.message)); page.on('dialog', d => d.accept());
     await page.goto(URL + '/'); await page.waitForSelector('body[data-ready]'); await page.fill('#name', name); await page.check('#agree');
-    return { ctx, page, name };
+    return { ctx, page, name, frames };
   };
   const host = await phone('Hunter', 51.5079, REC), ana = await phone('Ana', 51.5080, REC), bo = await phone('Bo', 51.5081, false);
   await host.page.click('#btnCreate'); await host.page.waitForSelector('#lobbyCode:not(:empty)'); const code = (await host.page.textContent('#lobbyCode')).trim();
@@ -29,6 +29,19 @@ let fails = 0; const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ')
   for (const p of all) await p.page.evaluate(() => { window.leaks = []; const chk = () => { if (!S || !S.revealAt) return; const t = Date.now() + (window.clockSync?.offset || 0);
       if (t < S.revealAt - 20 && (document.getElementById('rvRole') || /HUNTER|HIDER/.test(document.getElementById('reveal').textContent) || /HUNTER|HIDER/.test(document.getElementById('roleBadge').textContent) || !document.getElementById('roleCard').classList.contains('hidden'))) window.leaks.push(t - S.revealAt); };
     new MutationObserver(chk).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); setInterval(chk, 16); });
+  // v13.1: no roles in any lobby DOM (default random deal), then the host's secret manual pick stays on the host's phone
+  const lobbyLeak = () => { const lob = document.getElementById('lobby'); const bad = [...lob.querySelectorAll('.hunter, .hider, [data-role]')].length;
+    const li = document.getElementById('playerList').cloneNode(true); li.querySelectorAll('.nm').forEach(n => n.firstChild && n.firstChild.nodeType === 3 && n.firstChild.remove()); // drop player names (host is called 'Hunter')
+    const txt = li.textContent + document.getElementById('roleCounts').textContent + (document.getElementById('waitHost')?.textContent || '');
+    return { bad, txt: /hunter|hider|🔦|🙈/i.test(txt) ? txt : '' }; };
+  for (const p of all) { const l = await p.page.evaluate(lobbyLeak); check(!l.bad && !l.txt, `${p.name} lobby DOM (random deal): no role strings / classes ${l.bad} ${l.txt}`); }
+  await host.page.evaluate(() => document.getElementById('hostName').scrollIntoView({ block: 'start' })); await sleep(400); await host.page.screenshot({ path: 'shots/v13_lobby_noroles.png' });
+  await host.page.check('#sManual'); await host.page.waitForFunction(() => S.hostPick && S.hostPick.manual);
+  check(/secret/.test(await host.page.textContent('#pickNote')) && await host.page.$$eval('#playerList [data-pick]', e => e.length) === 3, 'host-only manual pick mode is clearly labelled');
+  await host.page.click(`[data-pick="${await host.page.evaluate(() => S.you)}"]`); await host.page.waitForFunction(() => S.hostPick.ids.length === 1 && S.hostPick.ids[0] === S.you);
+  await sleep(300);
+  for (const p of [ana, bo]) { const l = await p.page.evaluate(lobbyLeak); const pk = await p.page.evaluate(() => document.querySelectorAll('[data-pick]').length + (S.hostPick ? 1 : 0));
+    check(!l.bad && !l.txt && !pk, `${p.name} lobby DOM after host's secret pick: no roles, no pick`); }
   await host.page.click('#btnStart');
   for (const p of all) await p.page.waitForFunction(() => S && S.state === 'hiding');
   const st = await host.page.evaluate(() => ({ revealAt: S.revealAt, hideEndsAt: S.hideEndsAt, hideSec: S.settings.hideSec, now: S.serverNow }));
@@ -62,6 +75,11 @@ let fails = 0; const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ')
   check(/Hide! 1:5\d|Hide! 2:00/.test(await ana.page.textContent('#rcCount')), 'hider role card timer ≈ full 2:00: ' + await ana.page.textContent('#rcCount'));
   check(await host.page.evaluate(() => !document.getElementById('rvRole') && document.getElementById('reveal').classList.contains('hidden')), 'overlay cleaned up');
   for (const p of all) { const l = await p.page.evaluate(() => window.leaks); check(!l.length, `${p.name}: no role in the DOM before revealAt (${l.length} leaks)`); }
+  { // only the host's own lobby frames may carry hostPick (its secret manual choice); players never get it
+    for (const p of all) { const ROLE = p === host ? /"role"|"startRole"|"photos"|"last"|"decoys"|"drops"/ : /"role"|"startRole"|"hostPick"|"photos"|"last"|"decoys"|"drops"/;
+      const pre = p.frames.filter(f => f.t < st.revealAt - 50), leak = pre.find(f => ROLE.test(f.d));
+      check(pre.length > 3 && !leak, `${p.name}: ${pre.length} WS messages before revealAt carry no role data${leak ? ' LEAK ' + leak.d.slice(0, 200) : ''}`); }
+    const post = host.frames.filter(f => f.t >= st.revealAt); check(post.some(f => /"role"/.test(f.d)), 'roles arrive at/after revealAt'); }
   await host.page.click('#roleCard'); await host.page.evaluate(() => sendMsg({ type: 'end' }));
   check(errs.length === 0, 'no page errors ' + errs.join(' | '));
   if (REC) { const paths = { Hunter: await host.page.video().path(), Ana: await ana.page.video().path() }; await host.page.waitForTimeout(800);

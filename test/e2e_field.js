@@ -75,6 +75,7 @@ async function open(page, url) { await page.goto(url); const b = page.locator('b
   // start: Bob outside -> prompt listing Bob, accepted -> start anyway
   for (const [id, v] of [['#sGame', '1'], ['#sPing', '5'], ['#sHide', '0']]) { await host.page.fill(id, v); await host.page.dispatchEvent(id, 'change'); }
   await sleep(500);
+  await host.page.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await host.page.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
   await host.page.click('#btnStart');
   await host.page.waitForFunction(() => S.state === 'playing', null, { timeout: 10000 });
   check(dialogs.some(d => /Outside the playing field: Bob/.test(d) && !/Alice/.test(d)), 'start prompt lists only Bob as outside; start anyway works');

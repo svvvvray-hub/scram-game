@@ -32,20 +32,24 @@ async function setup(a, settings) {
   await until(() => host.state && host.state.players.length === 3);
   host.send({ type: 'loc', lat: 37.5, lng: -122.5, acc: 5 });
   hs.forEach((h, i) => h.send({ type: 'loc', lat: HIDER_LAT[i], lng: -122.1, acc: 8 }));
+  host.send({ type: 'role', id: host.joined.id, role: 'hunter' }); // host-only secret manual pick (default is a random deal at start)
   host.send({ type: 'settings', settings });
-  await until(() => host.state.settings.pingSec === settings.pingSec);
+  await until(() => host.state.settings.pingSec === settings.pingSec && host.state.hostPick?.ids.length === 1);
   return { host, hs, code };
 }
 
-test('roles default: host hunter, joiners hiders; lobby shows GPS status but no coords', async () => {
+test('lobby: no roles on the wire (manual pick is host-only); lobby shows GPS status but no coords', async () => {
   const a = await boot(); const { host, hs } = await setup(a, { gameSec: 2, pingSec: 0.3, hideSec: 0 });
   await sleep(100);
   const ps = host.state.players;
-  assert.equal(ps.find(p => p.id === host.joined.id).role, 'hunter');
-  assert.ok(ps.filter(p => p.role === 'hider').length === 2);
+  for (const c of [host, ...hs]) assert.ok(c.msgs.filter(m => m.type === 'state').every(m => m.players.every(p => !('role' in p))), 'no role field in lobby');
+  assert.deepEqual(host.state.hostPick.ids, [host.joined.id]); assert.ok(hs.every(h => !h.raw().includes('hostPick')), 'pick never sent to players');
   assert.ok(ps.every(p => p.perm === 'granted' && p.acc != null));
   assert.ok(!host.raw().includes('37.111111') && !host.raw().includes('37.222222'));
   assert.ok(!hs[0].raw().includes('37.222222'), 'hider must not see other hider');
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  assert.equal(host.state.players.find(p => p.id === host.joined.id).role, 'hunter');
+  assert.ok(host.state.players.filter(p => p.role === 'hider').length === 2);
   a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
 });
 
@@ -142,10 +146,10 @@ test('3 consecutive rounds via rematch: same code/players, roles restored, no st
     const s = host.state;
     assert.equal(s.code, code); assert.deepEqual(s.players.map(p => p.id).sort(), ids);
     assert.ok(s.players.every(p => !p.caught)); assert.equal(s.pingCount, 0); assert.ok(!s.pings && !s.last);
-    assert.equal(s.players.filter(p => p.role === 'hunter').length, 1, 'pre-game roles restored');
+    assert.ok(s.players.every(p => !('role' in p)), 'no roles in the lobby after rematch');
     assert.deepEqual(s.settings.pingSec, 0.3);
-    host.send({ type: 'randomize', hunters: 1 }); await sleep(50);
-    assert.equal(host.state.players.filter(p => p.role === 'hunter').length, 1);
+    host.send({ type: 'randomize', hunters: 1 }); await until(() => host.state.hostPick && !host.state.hostPick.manual);
+    assert.equal(host.state.hostPick.hunters, 1);
   }
   assert.equal(a.lobbies.size, 1);
   a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());

@@ -55,6 +55,7 @@ let fails = 0; const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ')
   await M.evaluate(() => scrollTo(0, 0)); await sleep(3200);
   await M.screenshot({ path: 'shots/v9_lobby_modes_qr.png' });
   // ---- start: role cards
+  await M.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await M.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
   await M.click('#btnStart'); await M.waitForFunction(() => S.state === 'hiding');
   await ana.page.waitForSelector('#roleCard:not(.hidden)');
   check(/You're a HIDER/.test(await ana.page.textContent('#rcTitle')) && /^Hide! \d:\d\d/.test(await ana.page.textContent('#rcCount')) && await ana.page.locator('#rcBullets li').count() === 3, 'hider role card: title, Hide! countdown, 3 bullets');

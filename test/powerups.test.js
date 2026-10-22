@@ -24,7 +24,7 @@ async function lobby(a, roles, settings = {}) {
   await until(() => cs[0].state && cs[0].state.players.length === roles.length);
   roles.forEach((r, i) => cs[0].send({ type: 'role', id: cs[i].id(), role: r }));
   cs[0].send({ type: 'settings', settings: { gameSec: 1200, pingSec: 600, hideSec: 0, ...settings } });
-  await until(() => roles.every((r, i) => cs[0].state.players.find(p => p.id === cs[i].id()).role === r) && cs[0].state.settings.pingSec === (settings.pingSec ?? 600));
+  await until(() => cs[0].state.hostPick && roles.every((r, i) => cs[0].state.hostPick.ids.includes(cs[i].id()) === (r === 'hunter')) && cs[0].state.settings.pingSec === (settings.pingSec ?? 600));
   return cs;
 }
 const loc = (c, p) => c.send({ type: 'loc', lat: p.lat, lng: p.lng, acc: 5 });

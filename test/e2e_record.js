@@ -36,6 +36,7 @@ async function open(page, url) { await page.goto(url); await page.waitForSelecto
   await hider.page.waitForSelector('#camPanel:not(.hidden)'); await hider.page.click('#btnReadyCam');
   await hunter.page.waitForFunction(() => S.players.some(p => p.cam === 'granted'), null, { timeout: 10000 });
   for (const [id, v] of [['#sGame', '1'], ['#sPing', '5'], ['#sHide', '3']]) { await hunter.page.fill(id, v); await hunter.page.dispatchEvent(id, 'change'); }
+  await hunter.page.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await hunter.page.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
   await sleep(600); await hunter.page.click('#btnStart');
   await hider.page.waitForFunction(() => S.state === 'playing', null, { timeout: 20000 });
   check(await hider.page.isVisible('#recBtn'), 'Record button visible in game');

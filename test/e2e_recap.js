@@ -33,20 +33,21 @@ const T0 = Date.now();
   const code = (await murray.page.textContent('#lobbyCode')).trim();
   for (const p of [alice, carl, bob]) { await p.page.fill('#code', code); await p.page.check('#agree'); await p.page.click('#btnJoin'); await p.page.waitForSelector('#lobbyCode:not(:empty)'); }
   await murray.page.waitForFunction(() => S.players.length === 4 && S.players.every(p => p.perm === 'granted'), null, { timeout: 20000 });
-  // roles: Carl -> hunter (2 hunters)
-  await murray.page.click(`[data-role="${await murray.page.evaluate(() => S.players.find(p => p.name === 'Carl').id)}"]`);
-  await murray.page.waitForFunction(() => S.players.filter(p => p.role === 'hunter').length === 2);
-  check(/2 hunters · 🙈 2 hiders/.test(await murray.page.textContent('#roleCounts')), 'role counts: ' + await murray.page.textContent('#roleCounts'));
+  // roles: host secretly picks Murray + Carl (manual mode, host-only); nobody's lobby shows roles
+  await murray.page.check('#sManual'); await murray.page.waitForFunction(() => S.hostPick && S.hostPick.manual);
+  for (const n of ['Murray', 'Carl']) { await murray.page.click(`[data-pick="${await murray.page.evaluate(n => S.players.find(p => p.name === n).id, n)}"]`); await sleep(200); }
+  await murray.page.waitForFunction(() => S.hostPick.ids.length === 2);
+  check(/^Players 4\/20/.test(await murray.page.textContent('#roleCounts')) && !/hunter|hider/i.test(await murray.page.textContent('#roleCounts')), 'role counts show no roles: ' + await murray.page.textContent('#roleCounts'));
+  check(await alice.page.$$eval('#playerList [data-pick], #playerList .hunter, #playerList .hider', e => e.length) === 0, 'players never see the manual pick');
   check(await murray.page.isChecked('#sBecome'), 'infection toggle on by default');
   check(await murray.page.$$eval('#playerList a.ig', as => as.map(a => a.textContent + '|' + a.href + '|' + a.rel + '|' + a.target).join(',')).then(t => t.includes('@murray.hunts|https://www.instagram.com/murray.hunts/|noopener|_blank') && t.includes('@alice_hides|https://www.tiktok.com/@alice_hides|')), 'social handles link to the right platform in lobby');
   for (const [id, v] of [['#sGame', '1'], ['#sPing', '5'], ['#sHide', '0']]) { await murray.page.fill(id, v); await murray.page.dispatchEvent(id, 'change'); }
   await sleep(500); await murray.page.screenshot({ path: 'shots/roles.png', fullPage: true });
-  // randomize with 2 hunters keeps 2, then restore Murray+Carl
-  await murray.page.fill('#sHunters', '2'); await murray.page.click('#btnRandom'); await sleep(800);
-  await murray.page.waitForFunction(() => S.players.filter(p => p.role === 'hunter').length === 2); check(true, 'randomize with 2 hunters -> 2 hunters');
-  for (const n of ['Murray', 'Carl', 'Alice', 'Bob']) { const want = n === 'Murray' || n === 'Carl' ? 'hunter' : 'hider';
-    const cur = await murray.page.evaluate(n => S.players.find(p => p.name === n), n); if (cur.role !== want) await murray.page.evaluate(([id, r]) => sendMsg({ type: 'role', id, role: r }), [cur.id, want]); }
-  await murray.page.waitForFunction(() => ['Murray', 'Carl'].every(n => S.players.find(p => p.name === n).role === 'hunter') && S.players.filter(p => p.role === 'hunter').length === 2);
+  // random deal with 2 hunters, then back to the manual Murray+Carl pick
+  await murray.page.uncheck('#sManual'); await murray.page.fill('#sHunters', '2'); await murray.page.dispatchEvent('#sHunters', 'change');
+  await murray.page.waitForFunction(() => !S.hostPick.manual && S.hostPick.hunters === 2); check(true, 'random deal with 2 hunters set');
+  await murray.page.evaluate(() => { for (const n of ['Murray', 'Carl']) sendMsg({ type: 'role', id: S.players.find(p => p.name === n).id, role: 'hunter' }); });
+  await murray.page.waitForFunction(() => S.hostPick.manual && S.hostPick.ids.length === 2);
   // quality sheet + recording (Alice & Murray), 3 s segments for the test
   await alice.page.click('#recQBtn'); await sleep(300);
   check(/Standard/.test(await alice.page.textContent('#recQuality .on')) && /11\.7 MB\/min/.test(await alice.page.textContent('#recQuality')), 'quality presets with MB/min, Standard default');
@@ -54,6 +55,7 @@ const T0 = Date.now();
   await alice.page.click('#clipClose');
   await murray.page.click('#btnStart');
   await alice.page.waitForFunction(() => S.state === 'playing', null, { timeout: 15000 });
+  for (const p of [murray, alice, carl, bob]) await p.page.waitForFunction(() => S.players.find(x => x.id === S.you)?.role, null, { timeout: 15000 }); // roles arrive at revealAt
   for (const p of [alice, murray]) { await p.page.click('#recBtn'); await p.page.locator('#recOk:visible').click({ timeout: 1500 }).catch(() => {}); await p.page.waitForFunction(() => Rec.recording, null, { timeout: 10000 }); }
   const opts = await alice.page.evaluate(() => ({ o: Rec.lastOpts, c: Rec.lastConstraints }));
   check(opts.o.videoBitsPerSecond === 1500000 && opts.o.audioBitsPerSecond === 64000 && opts.c.video.width.ideal === 1280 && opts.c.video.height.ideal === 720 && opts.c.audio.channelCount.ideal === 1, 'preset: 720p, 1.5 Mbps video, 64 kbps mono audio ' + JSON.stringify(opts.o));

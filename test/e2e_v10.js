@@ -52,7 +52,8 @@ const ZALO_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWe
   check(!!myId && await P.evaluate(() => !!JSON.parse(localStorage.scram).token), 'session (id + token + code) persisted');
   await H.waitForFunction(n => S.players.length >= 2, null, { timeout: 10000 });
   await H.evaluate(() => sendMsg({ type: 'settings', settings: { hideSec: 0 } }));
-  await H.waitForTimeout(300); await H.evaluate(() => sendMsg({ type: 'start' }));
+  await H.waitForTimeout(300); await H.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await H.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
+  await H.evaluate(() => sendMsg({ type: 'start' }));
   await H.waitForFunction(() => S.state === 'playing' || S.state === 'hiding', null, { timeout: 10000 });
   const role0 = await P.evaluate(id => { const p = S.players.find(x => x.id === id); return p && p.role; }, myId);
   await P.close();

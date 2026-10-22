@@ -58,6 +58,7 @@ const T0 = Date.now();
   await murray.page.selectOption('#sPower', 'chaos');
   for (const [id, v] of [['#sGame', '2'], ['#sPing', '30'], ['#sHide', '0']]) { await murray.page.fill(id, v); await murray.page.dispatchEvent(id, 'change'); }
   await murray.page.waitForFunction(() => S.settings.powerups === 'chaos' && S.settings.pingSec === 30);
+  await murray.page.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await murray.page.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
   await murray.page.click('#btnStart'); await ana.page.waitForFunction(() => S.state === 'playing');
   // 1) hider drop -> only hiders see it; Ana picks it up (5 s scaled = 1 s) and uses Hunter Radar
   await ana.page.waitForFunction(() => (S.drops || []).some(d => d.side === 'hider'), null, { timeout: 30000 });

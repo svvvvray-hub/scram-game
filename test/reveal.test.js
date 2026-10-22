@@ -39,3 +39,27 @@ test('server: time echo, revealAt = start + revealMs, hide timer starts at revea
   assert.equal(p.st.revealAt, h.st.revealAt, 'same revealAt for everyone');
   a.server.close(); h.ws.terminate(); p.ws.terminate();
 });
+
+test('server: no role data on the wire (lobby, host pick, countdown) until revealAt; visibility rules after', async () => {
+  let fake = 2_000_000; const a = createApp({ tickMs: 20, minSec: 0.1, defaultMode: 'custom', revealMs: 5500, now: () => fake });
+  await new Promise(r => a.server.listen(0, r)); const url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  const mk = () => { const ws = new WebSocket(url), c = { ws, st: null, msgs: [] }; ws.on('message', d => { const m = JSON.parse(d); c.msgs.push({ at: fake, m }); if (m.type === 'state') c.st = m; if (m.type === 'joined') c.j = m; }); c.send = m => ws.send(JSON.stringify(m)); c.open = new Promise(r => ws.on('open', r)); return c; };
+  const cs = [mk(), mk(), mk(), mk()]; for (const c of cs) await c.open;
+  cs[0].send({ type: 'create', agreed: true, name: 'H' }); await until(() => cs[0].j);
+  for (const c of cs.slice(1)) { c.send({ type: 'join', agreed: true, code: cs[0].j.code, name: 'P' }); await until(() => c.j); }
+  await until(() => cs[0].st.players.length === 4);
+  cs.forEach((c, i) => c.send({ type: 'loc', lat: 10 + i / 1000, lng: 20, acc: 5 }));
+  cs[0].send({ type: 'settings', settings: { hideSec: 60, gameSec: 600, pingSec: 60, teammates: true } });
+  cs[0].send({ type: 'pick', manual: false, hunters: 2 }); await until(() => cs[0].st.hostPick?.hunters === 2);
+  cs[0].send({ type: 'start' }); await until(() => cs.every(c => c.st.state === 'hiding'));
+  const revealAt = cs[0].st.revealAt; fake += 3000; cs.forEach(c => c.send({ type: 'loc', lat: 11, lng: 21, acc: 5 })); await sleep(150);
+  const ROLE = /"role"|"startRole"|hunter"|hider"|"photos"|"last"|"decoys"|"drops"/;
+  for (const c of cs) { const pre = c.msgs.filter(x => x.at < revealAt);
+    assert.ok(pre.length > 3 && pre.every(x => !ROLE.test(JSON.stringify(x.m))), 'no role data before revealAt: ' + (pre.map(x => JSON.stringify(x.m)).find(j => ROLE.test(j)) || '')); }
+  assert.ok(cs.slice(1).every(c => !c.msgs.some(x => 'hostPick' in x.m)), 'host pick never sent to players');
+  fake = revealAt + 10; await until(() => cs.every(c => c.st.players.some(p => p.role)));
+  const roles = Object.fromEntries(cs[0].st.players.map(p => [p.id, p.role])); assert.equal(Object.values(roles).filter(r => r === 'hunter').length, 2);
+  for (const c of cs) { const me = roles[c.j.id], seen = c.st.players.filter(p => p.loc && p.id !== c.j.id);
+    assert.ok(seen.every(p => roles[p.id] === me), `${me} only sees own side live`); }
+  a.server.close(); cs.forEach(c => c.ws.terminate());
+});

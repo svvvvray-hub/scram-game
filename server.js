@@ -118,6 +118,7 @@ function createApp(opts = {}) {
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
       trails: {}, log: [], catches: new Map(), drops: new Map(), nextDropAt: 0, dropSide: 'hider', jamUntil: 0, truthNext: false, shrink: null, nextHoundAt: 0, recapCache: null, highlights: new Map(),
+      pick: { manual: false, hunters: 1, ids: new Set() }, // v13.1 host-only hunter choice; roles are dealt at start and stay secret until revealAt
     };
     applyMode(L.settings, DEFAULT_MODE);
     lobbies.set(code, L);
@@ -131,7 +132,7 @@ function createApp(opts = {}) {
     const p = { id: rid(6), token: rid(16), name: String(name || 'Player').trim().slice(0, 20) || 'Player',
       role: 'hider', caught: false, caughtAt: 0, ws: null, loc: null, perm: 'unknown', connected: false, revealedAt: 0,
       cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, held: null, lastUse: 0, pickup: null, silent: false, shieldUntil: 0, radarUntil: 0, houndUntil: 0, used: 0, social: social || null };
-    if (!L.hostId) { L.hostId = p.id; p.role = 'hunter'; }
+    if (!L.hostId) L.hostId = p.id; // no lobby roles: dealt at start (random by default)
     L.players.set(p.id, p);
     return p;
   }
@@ -144,6 +145,8 @@ function createApp(opts = {}) {
   function viewFor(L, me) {
     const t = now();
     const ended = L.state === 'ended';
+    const pre = L.state === 'lobby' || t < (L.revealAt || 0); // before the reveal NO role data (own or others') leaves the server
+    if (pre) return preView(L, me, t);
     const players = [...L.players.values()].map(p => {
       const o = { id: p.id, name: p.name, role: p.role, caught: p.caught, caughtAt: p.caughtAt, connected: p.connected, perm: p.perm,
         host: p.id === L.hostId, cam: p.cam, acc: p.loc ? Math.round(p.loc.acc) : null,
@@ -189,6 +192,37 @@ function createApp(opts = {}) {
     return v;
   }
 
+  // Lobby / countdown view: names, GPS & presence only. No role, no role-gated data (pings, photos, drops, decoys, teammates).
+  function preView(L, me, t) {
+    const players = [...L.players.values()].map(p => {
+      const o = { id: p.id, name: p.name, connected: p.connected, perm: p.perm, host: p.id === L.hostId, cam: p.cam, acc: p.loc ? Math.round(p.loc.acc) : null,
+        stale: !p.loc || (t - p.loc.recvAt) > STALE_MS, out: outFlag(L, p) };
+      if (p.social && L.state === 'lobby') o.social = p.social;
+      if (p.id === me.id && p.loc) o.loc = { lat: p.loc.lat, lng: p.loc.lng, acc: p.loc.acc, ts: p.loc.ts };
+      return o;
+    });
+    const v = { type: 'state', code: L.code, you: me.id, host: L.hostId, state: L.state, settings: L.settings,
+      serverNow: t, revealAt: L.revealAt || 0, startedAt: L.startedAt, hideEndsAt: L.hideEndsAt, endsAt: L.endsAt, nextPingAt: L.nextPingAt,
+      winner: null, maxPlayers: MAX_PLAYERS, players, pingCount: 0, events: L.state === 'lobby' ? L.events.slice(-8) : [] };
+    v.field = curField(L); v.baseField = L.field; v.shrinkUntil = 0; v.oobGraceMs = oobGrace(L); v.round = L.round; v.camAt = L.camAt; v.compassAt = L.compassAt; v.compass = false;
+    if (L.state === 'lobby' && L.chimeTest) { const tally = { good: 0, quiet: 0, loud: 0 }; for (const x of L.chimeTest.votes.values()) tally[x]++;
+      v.chimeTest = { id: L.chimeTest.id, vol: L.chimeTest.vol, myVote: L.chimeTest.votes.get(me.id) || null, ...(me.id === L.hostId ? { tally, n: L.players.size } : {}) }; }
+    v.catches = []; v.hlCount = L.highlights.size; v.hlMine = L.highlights.has(me.id);
+    if (me.id === L.hostId && L.state === 'lobby') v.hostPick = { manual: L.pick.manual, hunters: L.pick.hunters, ids: L.pick.manual ? [...L.pick.ids].filter(id => L.players.has(id)) : [] }; // host-only, never sent to players
+    return v;
+  }
+  const preReveal = L => L.state === 'lobby' || now() < (L.revealAt || 0);
+  function dealRoles(L, ps) { // returns error string or null
+    if (ps.length < 2) return 'Need at least 1 hunter and 1 hider';
+    let hunters;
+    if (L.pick.manual) { hunters = new Set([...L.pick.ids].filter(id => L.players.has(id)));
+      if (!hunters.size || hunters.size >= ps.length) return 'Need at least 1 hunter and 1 hider'; }
+    else { const n = Math.max(1, Math.min(ps.length - 1, L.pick.hunters | 0 || 1)), sh = [...ps];
+      for (let i = sh.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [sh[i], sh[j]] = [sh[j], sh[i]]; }
+      hunters = new Set(sh.slice(0, n).map(p => p.id)); }
+    for (const p of ps) p.role = hunters.has(p.id) ? 'hunter' : 'hider';
+    return null;
+  }
   const curField = L => (L.shrink && L.shrink.field) || L.field;
   const outFlag = (L, p) => (L.state === 'playing' || L.state === 'hiding') ? !!p.outSince : !!(L.field && p.loc && !Field.inField(L.field, p.loc));
   function broadcast(L) { for (const p of L.players.values()) if (p.ws) send(p.ws, viewFor(L, p)); }
@@ -336,6 +370,7 @@ function createApp(opts = {}) {
         lobbies.delete(L.code); // all locations dropped with it
         continue;
       }
+      if (running && !L.revealSent && t >= L.revealAt) { L.revealSent = true; broadcast(L); } // the reveal: first state that carries roles
       if (L.state === 'hiding' && t >= L.hideEndsAt) { L.state = 'playing'; L.nextPingAt = t + L.settings.pingSec * 1000; event(L, 'Hunt is on!'); logEv(L, 'hunt', {}, '🔦 Hunt is on'); broadcast(L); }
       if (running) checkBounds(L);
       for (const [pid, c] of L.catches) if (t >= c.expiresAt) { L.catches.delete(pid); const h = L.players.get(c.hiderId); event(L, `⌛ Catch claim for ${h ? h.name : '?'} expired`); broadcast(L); }
@@ -538,7 +573,7 @@ function createApp(opts = {}) {
 
   function leave(L, p) {
     if (!L.players.has(p.id)) return;
-    L.players.delete(p.id);
+    L.players.delete(p.id); L.pick.ids.delete(p.id);
     send(p.ws, { type: 'left' }); p.ws = null;
     if (L.players.size === 0) { lobbies.delete(L.code); return; }
     if (L.hostId === p.id) {
@@ -578,13 +613,13 @@ function createApp(opts = {}) {
           if (me.ws && me.ws !== ws) try { me.ws.close(); } catch {}
         } else if (m.type === 'peek') { // pre-rejoin check: is my saved session still alive? (token-gated, no locations)
           const PL = lobbies.get(String(m.code || '').toUpperCase()), p = PL && [...PL.players.values()].find(x => x.token === m.token);
-          return send(ws, p ? { type: 'session', ok: true, code: PL.code, state: PL.state, name: p.name, role: p.role, caught: p.caught } : { type: 'session', ok: false });
+          return send(ws, p ? { type: 'session', ok: true, code: PL.code, state: PL.state, name: p.name, ...(preReveal(PL) ? {} : { role: p.role, caught: p.caught }) } : { type: 'session', ok: false });
         } else return;
         me.ws = ws; me.connected = true; me.discAt = 0;
         send(ws, { type: 'joined', code: L.code, id: me.id, token: me.token });
         broadcast(L);
         if (L.state === 'ended') send(ws, { type: 'recap', recap: buildRecap(L) });
-        if (isHunter(me) && L.state !== 'lobby') for (const [id, ph] of Object.entries(L.photos)) send(ws, { type: 'camPeek', id, ...ph });
+        if (isHunter(me) && !preReveal(L)) for (const [id, ph] of Object.entries(L.photos)) send(ws, { type: 'camPeek', id, ...ph });
         return;
       }
       const host = me.id === L.hostId;
@@ -600,7 +635,7 @@ function createApp(opts = {}) {
           const of = outFlag(L, me), ofChanged = of !== me.lastOut; me.lastOut = of;
           const permNew = first || me.perm !== 'granted'; me.perm = 'granted';
           if (tryClaim(L, me) || permNew || (L.state === 'lobby' && ofChanged)) broadcast(L);
-          else if (isHunter(me) && L.state !== 'lobby') broadcast(L);
+          else if (isHunter(me) && !preReveal(L)) broadcast(L);
           else if (L.settings.teammates && me.role === 'hider' && !me.caught && running(L)) { for (const p of activeHiders(L)) if (p.ws) send(p.ws, viewFor(L, p)); } // only uncaught hiders get this update
           else send(ws, viewFor(L, me));
           break;
@@ -627,20 +662,23 @@ function createApp(opts = {}) {
           if (res.error) return send(ws, { type: 'error', error: res.error });
           L.field = res.field; broadcast(L);
         } break;
-        case 'role': if (host && L.state === 'lobby') { const p = L.players.get(m.id); if (p && ['hunter', 'hider'].includes(m.role)) p.role = m.role; broadcast(L); } break;
-        case 'randomize': if (host && L.state === 'lobby') {
-          const ps = [...L.players.values()]; const n = Math.max(1, Math.min(ps.length - 1, Number(m.hunters) || 1));
-          for (let i = ps.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [ps[i], ps[j]] = [ps[j], ps[i]]; }
-          ps.forEach((p, i) => p.role = i < n ? 'hunter' : 'hider'); broadcast(L);
+        case 'role': if (host && L.state === 'lobby') { // host-only manual pick (switches to manual mode); stays secret until the reveal
+          const p = L.players.get(m.id); if (!p || !['hunter', 'hider'].includes(m.role)) break;
+          if (!L.pick.manual) { L.pick.manual = true; L.pick.ids = new Set(); }
+          if (m.role === 'hunter') L.pick.ids.add(p.id); else L.pick.ids.delete(p.id); send(ws, viewFor(L, me));
         } break;
-        case 'kick': if (host && L.state === 'lobby' && m.id !== me.id) { const p = L.players.get(m.id); if (p) { send(p.ws, { type: 'gone', kicked: true }); L.players.delete(m.id); broadcast(L); } } break;
+        case 'randomize': case 'pick': if (host && L.state === 'lobby') { // random deal at start with N hunters (default), or toggle manual mode
+          if (m.hunters != null) L.pick.hunters = Math.max(1, Math.min(MAX_PLAYERS - 1, Number(m.hunters) || 1));
+          L.pick.manual = m.type === 'pick' ? !!m.manual : false; if (!L.pick.manual) L.pick.ids = new Set(); send(ws, viewFor(L, me));
+        } break;
+        case 'kick': if (host && L.state === 'lobby' && m.id !== me.id) { const p = L.players.get(m.id); if (p) { send(p.ws, { type: 'gone', kicked: true }); L.players.delete(m.id); L.pick.ids.delete(m.id); broadcast(L); } } break;
         case 'start': if (host && L.state === 'lobby') {
           const ps = [...L.players.values()];
-          if (!ps.some(isHunter) || !ps.some(p => p.role === 'hider')) return send(ws, { type: 'error', error: 'Need at least 1 hunter and 1 hider' });
           if (L.field && !m.force) {
             const outside = ps.filter(p => !p.loc || !Field.inField(L.field, p.loc)).map(p => ({ id: p.id, name: p.name, noGps: !p.loc }));
             if (outside.length) return send(ws, { type: 'startBlocked', outside });
           }
+          { const err = dealRoles(L, ps); if (err) return send(ws, { type: 'error', error: err }); }
           const t = now() + revealMs; L.revealAt = t; L.startedAt = t; stats.gameStarted(); for (const p of L.players.values()) if (p.social) stats.handle(p.social, { played: true }); L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
           L.chimeTest = null;
@@ -654,7 +692,8 @@ function createApp(opts = {}) {
           else L.nextPingAt = L.hideEndsAt + L.settings.pingSec * 1000;
           event(L, L.state === 'hiding' ? 'Hiders, go hide!' : 'Hunt is on!'); logEv(L, 'start', {}, L.state === 'hiding' ? '🙈 Head start — hiders go hide' : '🔦 Hunt is on');
           for (const p of ps) trail(L, p, true);
-          broadcast(L);
+          broadcast(L); L.revealSent = L.revealAt <= now(); // roles go out at revealAt (timer, with the tick as a fallback)
+          if (!L.revealSent) { const r = L.round; setTimeout(() => { if (!L.revealSent && L.round === r && (L.state === 'playing' || L.state === 'hiding') && now() >= L.revealAt) { L.revealSent = true; broadcast(L); } }, L.revealAt - now() + 1); }
         } break;
         case 'cam': me.cam = ['granted', 'denied'].includes(m.cam) ? m.cam : 'unknown'; broadcast(L); break;
         case 'decoy': if (me.role === 'hider' && !me.caught && L.settings.features.decoy && (L.state === 'playing' || L.state === 'hiding') && !inCompass(L) && me.decoys > 0 && !me.decoyArmed) {

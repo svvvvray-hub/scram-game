@@ -303,25 +303,26 @@ function renderLobby() {
   $('playerList').innerHTML = S.players.map(p => {
     const gps = p.perm === 'granted' ? (p.stale ? `<span class="pill bad">GPS stale</span>` : `<span class="pill ok">GPS ±${p.acc ?? '?'}m</span>`)
       : `<span class="pill bad">${p.perm === 'denied' ? 'GPS blocked' : 'no GPS yet'}</span>`;
-    const role = isHost ? `<button class="small pill ${p.role}" data-role="${p.id}">${p.role === 'hunter' ? '🔦 hunter' : '🙈 hider'}</button>`
-      : `<span class="pill ${p.role}">${p.role === 'hunter' ? '🔦 hunter' : '🙈 hider'}</span>`;
-    const cam = p.role === 'hider' && S.settings.features?.cam ? (p.cam === 'granted' ? '<span class="pill ok">📷</span>' : p.cam === 'denied' ? '<span class="pill bad">no 📷</span>' : '') : '';
+    const hp = S.hostPick, picked = hp?.manual && hp.ids.includes(p.id); // host-only secret manual pick; players never get hostPick
+    const role = isHost && hp?.manual ? `<button class="small pill pick${picked ? ' on' : ''}" data-pick="${p.id}" title="Only you can see this">${picked ? '🔒 picked' : '🔒 pick'}</button>` : '';
+    const cam = S.settings.features?.cam ? (p.cam === 'granted' ? '<span class="pill ok">📷</span>' : p.cam === 'denied' ? '<span class="pill bad">no 📷</span>' : '') : '';
     const outP = S.field && p.out ? '<span class="pill out">outside field</span>' : '';
     return `<li><span class="nm">${esc(p.name)}${igLink(p.social)}${cam}${outP}${p.host ? ' 👑' : ''}${p.id === S.you ? ' (you)' : ''}${p.connected ? '' : ' 💤'}</span>${gps}${role}</li>`;
   }).join('');
-  for (const b of document.querySelectorAll('[data-role]')) b.onclick = () => { const p = S.players.find(x => x.id === b.dataset.role);
-    if (p.role === 'hunter' && S.players.filter(x => x.role === 'hunter').length <= 1) return toast('Need at least 1 hunter');
-    sendMsg({ type: 'role', id: p.id, role: p.role === 'hunter' ? 'hider' : 'hunter' }); };
-  { const nh = S.players.filter(p => p.role === 'hunter').length; $('roleCounts').textContent = `Players ${S.players.length}/${S.maxPlayers || 20} · 🔦 ${nh} hunter${nh === 1 ? '' : 's'} · 🙈 ${S.players.length - nh} hider${S.players.length - nh === 1 ? '' : 's'}`;
-    $('sHunters').max = Math.max(1, S.players.length - 1); }
+  for (const b of document.querySelectorAll('[data-pick]')) b.onclick = () => { const on = S.hostPick?.ids.includes(b.dataset.pick);
+    sendMsg({ type: 'role', id: b.dataset.pick, role: on ? 'hider' : 'hunter' }); };
+  $('roleCounts').textContent = `Players ${S.players.length}/${S.maxPlayers || 20} · roles are revealed when the game starts`;
+  if (isHost && S.hostPick) { const hp = S.hostPick; $('sHunters').max = Math.max(1, S.players.length - 1); if (document.activeElement !== $('sHunters')) $('sHunters').value = hp.hunters;
+    $('sManual').checked = hp.manual; $('sHunters').disabled = hp.manual;
+    $('pickNote').textContent = hp.manual ? `🔒 Manual pick (secret — only you see this): ${hp.ids.length} hunter${hp.ids.length === 1 ? '' : 's'} picked. Everyone else hides.` : `🎲 Roles are dealt randomly at start: ${Math.min(hp.hunters, Math.max(1, S.players.length - 1))} hunter(s), nobody sees roles until the reveal.`; }
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   set('sGame', +(st.gameSec / 60).toFixed(2)); set('sPing', st.pingSec); set('sHide', st.hideSec);
   set('sPower', st.powerups || 'normal'); set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
   $('sPower').disabled = $('sChimeVol').disabled = S.you !== S.host;
   $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed; $('sMates').checked = st.teammates !== false;
   for (const [f, id] of FEAT) $(id).checked = !!st.features?.[f];
-  const m = me(), hider = m && m.role === 'hider';
-  $('camPanel').classList.toggle('hidden', !(hider && st.features?.cam));
+  const m = me();
+  $('camPanel').classList.toggle('hidden', !st.features?.cam); // anyone may be dealt hider, so everyone sees the notice
   if (m && camConsent && m.cam !== camConsent) sendMsg({ type: 'cam', cam: camConsent });
   renderModes(); renderField(); renderChimeVote();
   $('camStatus').textContent = m?.cam === 'granted' ? '✅ Ready · camera allowed' : m?.cam === 'denied' ? '✅ Ready · no camera (hunters see “photo unavailable”)' : 'Not ready yet';
@@ -364,7 +365,8 @@ $('btnSound').onclick = () => { unlockAudio(); playChime(); $('soundAsk').classL
 $('soundYes').onclick = () => { $('soundAsk').classList.add('hidden'); toast('👍 Sound works — keep the volume up during the game'); };
 $('soundNo').onclick = () => { $('soundAsk').classList.add('hidden'); $('soundTips').classList.remove('hidden'); };
 $('btnReadyNoCam').onclick = () => { unlockAudio(); camConsent = 'denied'; localStorage.setItem('scramCam', 'denied'); sendMsg({ type: 'cam', cam: 'denied' }); };
-$('btnRandom').onclick = () => sendMsg({ type: 'randomize', hunters: +$('sHunters').value || 1 });
+$('sHunters').onchange = () => S?.hostPick?.manual || sendMsg({ type: 'pick', manual: false, hunters: +$('sHunters').value || 1 });
+$('sManual').onchange = () => sendMsg({ type: 'pick', manual: $('sManual').checked, hunters: +$('sHunters').value || 1 });
 $('btnStart').onclick = () => { const bad = S.players.filter(p => p.perm !== 'granted'); if (bad.length && !confirm(`${bad.map(p => p.name).join(', ')} ${bad.length > 1 ? "don't" : "doesn't"} have GPS yet. Start anyway?`)) return; sendMsg({ type: 'start' }); };
 $('btnShare').onclick = async () => { const url = location.origin + '/p/' + S.code; try { if (navigator.share) await navigator.share({ title: 'Join my Last Ping game', text: `Join my GPS hide & seek game: code ${S.code}`, url }); else { await navigator.clipboard.writeText(url); toast('🔗 Invite link copied'); } } catch {} };
 $('lobbyCode').onclick = async () => { try { await navigator.clipboard.writeText(S.code); toast(`📋 Code ${S.code} copied`); } catch { toast(`Join code: ${S.code}`); } };
@@ -715,7 +717,7 @@ window.Coach = { show: coach, TIPS, reset: resetTips };
 // ---- v10: rejoin button + in-app browser escape hatch
 function showRejoin(m) {
   const b = $('btnRejoin'); b.classList.remove('hidden');
-  b.textContent = `↩️ Rejoin game ${m.code} as ${m.name}` + (m.state === 'lobby' ? '' : ` (${m.caught ? 'caught' : m.role})`);
+  b.textContent = `↩️ Rejoin game ${m.code} as ${m.name}` + (m.state === 'lobby' || !m.role ? '' : ` (${m.caught ? 'caught' : m.role})`);
 }
 $('btnRejoin').onclick = () => { if (!sess) return; unlockAudio?.(); sendMsg({ type: 'rejoin', code: sess.code, token: sess.token }); };
 (function inAppBanner() {
@@ -796,7 +798,8 @@ function revealFrame() {
   const dt = tnow() - rv.R, ph = TimeSync.phaseAt(dt), o = $('reveal');
   if (ph === 'card' || S.round !== rv.round || !(S.state === 'hiding' || S.state === 'playing')) return endReveal();
   if (ph === 'radar' && !o.classList.contains('rm')) drawRadar(Math.min(1, (dt + 600) / 600));
-  if (rv.fired[ph]) return; rv.fired[ph] = true;
+  if (rv.fired[ph]) return; if (ph === 'reveal' && !me()?.role) return; // roles only arrive from the server at revealAt: wait for that state
+  rv.fired[ph] = true;
   const beat = TimeSync.BEATS.find(b => b.k === ph), late = beat ? dt - beat.at : 0, fresh = late < 150; // effects only when on time (late joiners jump silently)
   o.dataset.phase = ph; window.revealLog = window.revealLog || []; window.revealLog.push({ ph, srv: tnow(), late });
   const st = $('rvStage');

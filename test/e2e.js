@@ -25,6 +25,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await sleep(800);
   await hunter.page.screenshot({ path: 'shots/lobby.png', fullPage: true });
   hunter.page.on('dialog', d => d.accept()); h1.page.on('dialog', d => d.accept()); h2.page.on('dialog', d => d.accept());
+  await hunter.page.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await hunter.page.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
   await hunter.page.click('#btnStart');
   await hunter.page.waitForSelector('#hideCover:not(.hidden)'); console.log('head start shown to hunter');
   // privacy probe: watch hunter websocket frames for Alice's moved coord before ping
@@ -70,6 +71,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await playAgain();
   await hunter.page.screenshot({ path: 'shots/lobby_after_rematch.png', fullPage: true });
   for (let round = 2; round <= 3; round++) {
+    await hunter.page.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await hunter.page.waitForFunction(() => S.hostPick && S.hostPick.ids.includes(S.you)); // host secretly picks self as hunter (default is a random deal)
     await setShort(); await hunter.page.click('#btnStart');
     await hunter.page.waitForSelector('#game:not(.hidden)');
     const pings0 = frames.length;

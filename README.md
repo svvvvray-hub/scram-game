@@ -350,3 +350,10 @@ Sign in with the login form or open `/admin?key=YOUR_KEY` once: both set an Http
 To keep the data, use one of these upgrade paths:
 1. **Render persistent disk** (paid instance): add a disk (for example, mount path `/var/data`) and set `STATS_FILE=/var/data/stats.json`. No code changes are needed.
 2. **Free hosted database** (for example Neon Postgres, Upstash Redis, or Turso): replace `load`/`flush` in `stats.js` with reads and writes of the same JSON blob. This needs one client library, so it isn't included by default.
+
+## v13.1: secret roles until the reveal
+- **No lobby roles.** Nobody's lobby shows hunter/hider (no pills, no counts). By default roles are **dealt randomly at Start**; the host only sets *how many hunters*.
+- **Host-only manual pick:** "🔒 Pick hunters manually (host only — players never see it)" shows 🔒 pick buttons on the host's phone only. The pick (`hostPick`) is sent to the host alone; players never receive it.
+- **Server:** before `revealAt` (lobby + countdown) every state is a role-free `preView` (names, GPS, presence, own location only: no `role`, pings, photos, drops, decoys, teammates; `session` peek omits role). Roles go out in a broadcast exactly at `revealAt`. After the reveal the existing visibility rules apply unchanged.
+- **Wire:** `{type:'pick', manual, hunters}`; `randomize` = random deal with N hunters; `role` (host, lobby) = toggle that player in the secret manual pick.
+- Tests: `reveal.test.js` (no role data on the wire before revealAt, side-only visibility after), `game.test.js` lobby case; `e2e_v13.js` checks every lobby DOM for role strings/classes, records every WS frame before revealAt (no role data), and writes `shots/v13_lobby_noroles.png`. Older suites pick the host as hunter explicitly (secret manual pick) instead of relying on lobby roles.
