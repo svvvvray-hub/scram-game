@@ -33,6 +33,7 @@ footer{margin-top:3em;font-size:13px;color:#8a91a0}
 <li><strong>No accounts, no database, no tracking cookies.</strong> We run the game in server memory. When a round, lobby, or server ends, that game data is gone.</li>
 <li><strong>Your location is the core of the game.</strong> During a game your phone sends your GPS location to our server. Hunters see hiders' locations at each "ping," about every 60 seconds by default. Your location trail is kept in memory for the round so we can show the end-of-round recap. Then it is discarded.</li>
 <li><strong>Other players see what you share:</strong> your display name, your Instagram handle if you add one, your role, your in-game status, and some of your location.</li>
+<li><strong>Your Instagram handle is saved if you enter one.</strong> It may be viewed by the game creator, for example to connect with players. Leave it blank or ask us to delete it.</li>
 <li><strong>The camera snapshot is opt-in.</strong> If you consent in the lobby, hunters see one photo from your rear camera at minute 10. It is kept in memory for that round only.</li>
 <li><strong>Your video stays on your phone</strong> unless you tap "Send my highlights to host." Then short highlight cuts go to the server and are kept in memory for <strong>30 minutes at most</strong>.</li>
 <li><strong>We do not sell your personal information,</strong> and we don't share it for targeted advertising.</li>
@@ -62,8 +63,8 @@ footer{margin-top:3em;font-size:13px;color:#8a91a0}
 <tr>
 <td><strong>Instagram handle</strong> (optional)</td>
 <td>You add it when joining</td>
-<td>Everyone in your lobby (shown as a link to your profile); may appear in recaps and shared links</td>
-<td>Same as display name</td>
+<td>Everyone in your lobby (shown as a link to your profile); may appear in recaps and shared links. Also saved for the game creator, who may view it, for example to connect with players</td>
+<td>Kept until you ask us to delete it</td>
 </tr>
 <tr>
 <td><strong>Lobby code and a random session token</strong></td>
@@ -116,7 +117,7 @@ footer{margin-top:3em;font-size:13px;color:#8a91a0}
 </tbody>
 </table></div>
 <p>We <strong>do not</strong> collect your real name, email address, phone number, contacts, or payment information. We do not ask for them, and we have no account system.</p>
-<p><strong>Your device.</strong> The Game saves a few items in your browser's <strong>localStorage</strong> so you don't have to retype them: your display name, Instagram handle, camera-consent choice, settings, and your current lobby session. Some layout preferences are saved in <strong>sessionStorage</strong>. These items stay on your device. Leaving a lobby removes the lobby session. To remove everything else, clear this site's data in your browser settings. <strong>We do not use cookies for players.</strong> We use no advertising or third-party analytics trackers. For simple aggregate counts (games and unique players per day, which invite link brought a player, share taps), the Game also stores a random device id and the <code>?ref</code> invite tag you arrived with. The server keeps only a one-way hash of the device id with these counts. No name, handle, or location is stored.</p>
+<p><strong>Your device.</strong> The Game saves a few items in your browser's <strong>localStorage</strong> so you don't have to retype them: your display name, Instagram handle, camera-consent choice, settings, and your current lobby session. Some layout preferences are saved in <strong>sessionStorage</strong>. These items stay on your device. Leaving a lobby removes the lobby session. To remove everything else, clear this site's data in your browser settings. <strong>We do not use cookies for players.</strong> We use no advertising or third-party analytics trackers. For simple aggregate counts (games and unique players per day, which invite link brought a player, share taps), the Game also stores a random device id and the <code>?ref</code> invite tag you arrived with. The server keeps only a one-way hash of the device id with these counts. No name or location is stored with these counts. Instagram handles are the exception, as described in section 7.</p>
 <h2>3. How location sharing works</h2>
 <ul>
 <li><strong>Hiders:</strong> the server receives your live location. <strong>Hunters do not see it live.</strong> They receive a snapshot of your location at each scheduled "ping" (about every 60 seconds by default; the host can change this). Hunters may also get extra or modified pings from game events, such as bounties, the out-of-bounds penalty, or a ghost decoy. In the final "sudden death" phase, hunters see only a compass direction and a rough distance band to the nearest hider, not coordinates.</li>
@@ -150,7 +151,7 @@ footer{margin-top:3em;font-size:13px;color:#8a91a0}
 <h2>6. Server logs and technical data</h2>
 <p>Like most websites, our server and our hosting provider automatically handle technical data, such as your IP address, browser type, the pages you request, and timestamps. Our application writes a small amount of information to the server console, for example referral visits (the referring handle and page) and server events. Our host may keep these logs for a limited period under its own retention settings, [RENDER LOG RETENTION, e.g. 7 days on the free plan; confirm]. We use logs only to operate and debug the Game and prevent abuse.</p>
 <h2>7. How long we keep information</h2>
-<p>The Game has <strong>no database</strong>. All game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:</p>
+<p>The Game has <strong>no database</strong>. Apart from saved Instagram handles (see below), all game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:</p>
 <ul>
 <li><strong>at "Play again"</strong> (trails, catches, photos, recaps, and highlights from the previous round are wiped);</li>
 <li><strong>when you leave the lobby</strong> (your player entry is removed);</li>
@@ -158,10 +159,11 @@ footer{margin-top:3em;font-size:13px;color:#8a91a0}
 <li><strong>when the server restarts or sleeps</strong>, which on our free hosting can happen after a period of inactivity; and</li>
 <li><strong>for highlight cuts, after 30 minutes at most.</strong></li>
 </ul>
+<p><strong>Instagram handles.</strong> If you enter an Instagram handle, it is saved (with when we first and last saw it, how many games you played, and the invite tag that brought you, if any) and may be viewed by the game creator, for example to connect with players. You can leave the field blank, or ask us to delete your saved handle by contacting us (see the Contact section).</p>
 <p>Referral visit counts are kept in memory until the server restarts. Server logs are kept as described in section 6.</p>
 <h2>8. Your choices</h2>
 <ul>
-<li>Use any display name you like (within our conduct rules), and leave the Instagram field blank if you prefer.</li>
+<li>Use any display name you like (within our conduct rules), and leave the Instagram field blank if you prefer. If you entered a handle, you can ask us to delete it.</li>
 <li>Tap <strong>"Ready without camera"</strong> to opt out of the camera snapshot.</li>
 <li>Keep your videos on your device. Don't tap "Send my highlights to host."</li>
 <li>Deny or revoke location, camera, or microphone permissions in your browser settings. Some features won't work without them.</li>

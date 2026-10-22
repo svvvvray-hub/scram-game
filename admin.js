@@ -21,7 +21,7 @@ function mount(app, { env, stats, liveCounts }) {
   app.get('/admin', gate, (req, res) => {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(req.query.key !== undefined)));
     if (req.query.key !== undefined) { setCookie(req, res); return res.redirect(303, '/admin'); } // strip the key from the URL / history
-    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved)));
+    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(req.query.sort === 'games' ? 'games' : 'last'), req.query.sort === 'games' ? 'games' : 'last')));
   });
   app.post('/admin/login', gate, form, (req, res) => {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(true)));
@@ -29,6 +29,12 @@ function mount(app, { env, stats, liveCounts }) {
   });
   app.post('/admin/logout', gate, (req, res) => { res.clearCookie(COOKIE, { path: '/admin' }); res.redirect(303, '/admin'); });
   app.get('/admin/stats.json', gate, (req, res) => { if (!authed(req)) return res.status(401).json({ error: 'unauthorized' }); res.json(stats.summary(liveCounts())); });
+  app.get('/admin/handles.csv', gate, (req, res) => {
+    if (!authed(req)) return res.status(401).type('text').send('Unauthorized');
+    const q = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = stats.handleList(req.query.sort === 'games' ? 'games' : 'last').map(h => [h.handle, 'https://www.instagram.com/' + h.handle, h.first, h.last, h.games, h.ref || ''].map(q).join(','));
+    res.set('Content-Disposition', 'attachment; filename="lastping-handles.csv"').type('text/csv').send(['handle,profile_url,first_seen,last_seen,games,ref', ...rows].join('\r\n') + '\r\n');
+  });
   app.post('/admin/settings', gate, form, json, (req, res) => {
     if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
     const b = req.body || {}, p = { maxGames: b.maxGames, maxPerHour: b.maxPerHour };
@@ -66,12 +72,12 @@ function chart(days, field, color) { // inline SVG bar chart, 30 days
 <text x="0" y="12">${max}</text><text x="0" y="${H - 18}">0</text>${bars}<text x="${pad}" y="${H - 3}">${days[0].day.slice(5)}</text><text x="${W}" y="${H - 3}" text-anchor="end">today</text></svg>`;
 }
 
-function dashboard(s, saved) {
+function dashboard(s, saved, handles = s.handles, sort = 'last') {
   const c = (n, l) => `<div class="card"><div class="big">${esc(n)}</div><div class="lbl">${esc(l)}</div></div>`;
   const t = s.days[s.days.length - 1], st = s.settings;
   const refRows = s.refs.length ? s.refs.map(r => `<tr><td>@${esc(r.ref)}</td><td class="n">${r.players}</td><td class="n">${r.games}</td><td class="n">${r.visits}</td></tr>`).join('') : '<tr><td colspan="4" class="lbl">No ?ref traffic yet</td></tr>';
   const shares = Object.entries(s.shares); const shareRows = shares.length ? shares.map(([k, n]) => `<tr><td>${k === 'viral' ? 'Make it viral' : k === 'reel' ? 'Reel share' : esc(k)}</td><td class="n">${n}</td></tr>`).join('') : '<tr><td colspan="2" class="lbl">No shares yet</td></tr>';
-  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h1>📡 Last Ping · growth</h1><p class="sub">Private dashboard · counts only, anonymous device ids · last 30 days</p></div>
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h1>📡 Last Ping · growth</h1><p class="sub">Private dashboard · anonymous device ids · last 30 days</p></div>
 <form method="post" action="/admin/logout"><button class="ghost">Sign out</button></form></div>
 ${saved ? '<div class="ok">✅ Brake settings saved</div>' : ''}
 <form method="post" action="/admin/settings" class="card brake" style="margin-bottom:14px"><input type="hidden" name="form" value="1">
@@ -84,6 +90,11 @@ ${saved ? '<div class="ok">✅ Brake settings saved</div>' : ''}
 <div class="grid" id="kpis">${c(s.live.games, 'open games now')}${c(s.live.playing, 'games in play now')}${c(s.live.online, 'players online now')}${c(s.totals.games, 'total games created')}${c(s.totals.started, 'total games started')}${c(s.totals.players, 'total unique players')}${c(t.players, 'players today')}${c(s.playClicks, '/play clicks')}</div>
 <div class="two"><div class="card"><h2>Games created per day</h2>${chart(s.days, 'games', '#16a34a')}</div><div class="card"><h2>Unique players per day</h2>${chart(s.days, 'players', '#3b82f6')}</div></div>
 <div class="two"><div class="card"><h2>Top referrers (?ref)</h2><table><tr><th>Referrer</th><th class="n">New players</th><th class="n">Games</th><th class="n">Visits</th></tr>${refRows}</table></div>
-<div class="card"><h2>Shares</h2><table><tr><th>Kind</th><th class="n">Count</th></tr>${shareRows}</table><p class="lbl">Counted when a player taps Share on a reel or "Make it viral" clip.</p></div></div>`;
+<div class="card"><h2>Shares</h2><table><tr><th>Kind</th><th class="n">Count</th></tr>${shareRows}</table><p class="lbl">Counted when a player taps Share on a reel or "Make it viral" clip.</p></div></div>
+<div class="card" id="handles"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>📸 Players with Instagram <span class="pill off" id="handleCount">${s.handleCount}</span></h2>
+<a href="/admin/handles.csv" download id="csvBtn"><button type="button">Download CSV</button></a></div>
+<table id="handleTable"><tr><th>Handle</th><th>First seen</th><th><a href="/admin?sort=last#handles" style="color:${sort === 'last' ? '#fff' : '#9ca3af'}" id="sortLast">Last seen${sort === 'last' ? ' ▼' : ''}</a></th><th class="n"><a href="/admin?sort=games#handles" style="color:${sort === 'games' ? '#fff' : '#9ca3af'}" id="sortGames">Games${sort === 'games' ? ' ▼' : ''}</a></th><th>Ref</th></tr>
+${handles.length ? handles.map(h => `<tr><td><a href="https://www.instagram.com/${encodeURIComponent(h.handle)}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">@${esc(h.handle)}</a></td><td>${esc(h.first.slice(0, 16).replace('T', ' '))}</td><td>${esc(h.last.slice(0, 16).replace('T', ' '))}</td><td class="n">${h.games}</td><td>${h.ref ? '@' + esc(h.ref) : '<span class="lbl">—</span>'}</td></tr>`).join('') : '<tr><td colspan="5" class="lbl">No handles yet</td></tr>'}</table>
+<p class="lbl">Only players who typed an Instagram handle. Times in UTC.</p></div>`;
 }
 module.exports = { mount };

@@ -10,11 +10,11 @@ const BUSY = 'Last Ping is busy right now. Try again in a few minutes!';
   fs.mkdirSync('shots', { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || exe });
   const errs = [];
-  const phone = async (name, lat, path = '/') => {
+  const phone = async (name, lat, path = '/', ig = '') => {
     const ctx = await browser.newContext({ ...devices['Pixel 7'], geolocation: { latitude: lat, longitude: -0.0877, accuracy: 6 }, permissions: ['geolocation'] });
     await ctx.addInitScript(() => localStorage.setItem('scramQuiet', '1'));
     const page = await ctx.newPage(); page.on('pageerror', e => errs.push(name + ': ' + e.message));
-    await page.goto(URL + path); await page.waitForSelector('body[data-ready]'); await page.fill('#name', name); await page.check('#agree');
+    await page.goto(URL + path); await page.waitForSelector('body[data-ready]'); await page.fill('#name', name); if (ig) await page.fill('#ig', ig); await page.check('#agree');
     return { ctx, page };
   };
   // admin (desktop)
@@ -27,10 +27,11 @@ const BUSY = 'Last Ping is busy right now. Try again in a few minutes!';
   const reset = async () => { await A.goto(URL + '/admin'); if (await A.isChecked('#paused')) await A.uncheck('#paused'); await A.fill('#maxGames', '50'); await A.fill('#maxPerHour', '0'); await A.click('#saveBrake'); await A.waitForSelector('.ok'); };
   await reset();
   // sample data: referred players create and join games
-  const host = await phone('Host', 51.5079, '/?ref=murray'); await host.page.click('#btnCreate'); await host.page.waitForSelector('#lobbyCode:not(:empty)');
+  const host = await phone('Host', 51.5079, '/?ref=murray', '@Sunny.Seeker');
+  check((await host.page.textContent('.igNote')).trim() === 'Optional. Saved so the host can find you.', 'note under handle field'); await host.page.click('#btnCreate'); await host.page.waitForSelector('#lobbyCode:not(:empty)');
   const code = (await host.page.textContent('#lobbyCode')).trim();
-  const p2 = await phone('Ana', 51.508, `/p/${code}?ref=murray`); await p2.page.click('#btnJoin'); await p2.page.waitForSelector('#lobbyCode:not(:empty)');
-  const h2 = await phone('Ben', 51.509, '/?ref=lena'); await h2.page.click('#btnCreate'); await h2.page.waitForSelector('#lobbyCode:not(:empty)');
+  const p2 = await phone('Ana', 51.508, `/p/${code}?ref=murray`, 'https://instagram.com/ana_hides'); await p2.page.click('#btnJoin'); await p2.page.waitForSelector('#lobbyCode:not(:empty)');
+  const h2 = await phone('Ben', 51.509, '/?ref=lena', 'ben.runs_fast'); await h2.page.click('#btnCreate'); await h2.page.waitForSelector('#lobbyCode:not(:empty)');
   const h3 = await phone('Cy', 51.51); await h3.page.click('#btnCreate'); await h3.page.waitForSelector('#lobbyCode:not(:empty)');
   await A.request.get(URL + '/play?ref=murray', { maxRedirects: 0 }); await A.request.get(URL + '/play', { maxRedirects: 0 });
   await host.page.evaluate(() => { trackShare('viral'); trackShare('reel'); trackShare('viral'); });
@@ -60,6 +61,18 @@ const BUSY = 'Last Ping is busy right now. Try again in a few minutes!';
   const m = s.refs.find(x => x.ref === 'murray'); check(m && m.players >= 2 && m.games >= 1, 'referrer murray: ' + JSON.stringify(m));
   check(s.playClicks >= 2 && s.shares.viral >= 2 && s.shares.reel >= 1, 'play clicks + shares tracked');
   check(s.live.games >= 3 && s.live.online >= 5, 'live games/players: ' + JSON.stringify(s.live));
+  // Instagram handles (admin only)
+  check(s.handleCount === 3 && s.handles.some(h => h.handle === 'sunny.seeker' && h.ref === 'murray') && s.handles.some(h => h.handle === 'ben.runs_fast' && h.ref === 'lena'), 'handles in stats.json: ' + JSON.stringify(s.handles));
+  check((await fetch(URL + '/admin/handles.csv')).status === 401 && (await fetch(URL + '/admin/stats.json')).status === 401, 'csv/stats.json require auth');
+  const pub = (await Promise.all(['/', '/privacy', '/api/rules'].map(p => fetch(URL + p).then(r => r.text())))).join(''); check(!/sunny\.seeker|ben\.runs_fast/.test(pub), 'handles never on public endpoints');
+  check(/Instagram handle[^<]*saved[\s\S]*may be viewed by the game creator/.test(await (await fetch(URL + '/privacy')).text()), 'privacy page discloses saved handles');
+  await A.goto(URL + '/admin');
+  check(/Players with Instagram/.test(await A.textContent('#handles')) && (await A.textContent('#handleCount')).trim() === '3', 'Players with Instagram table + count');
+  check(await A.getAttribute('#handleTable a[href*="instagram.com/sunny.seeker"]', 'href') === 'https://www.instagram.com/sunny.seeker', 'handle links to instagram');
+  const [dl] = await Promise.all([A.waitForEvent('download'), A.click('#csvBtn button')]); const csv = fs.readFileSync(await dl.path(), 'utf8');
+  check(csv.startsWith('handle,profile_url,first_seen,last_seen,games,ref') && /sunny\.seeker/.test(csv) && /ana_hides/.test(csv), 'Download CSV works');
+  await A.click('#sortGames'); check(/Games ▼/.test(await A.textContent('#handleTable')), 'sortable by games');
+  await A.click('#sortLast'); check(/Last seen ▼/.test(await A.textContent('#handleTable')), 'sortable by last seen');
   await A.goto(URL + '/admin'); await A.screenshot({ path: 'shots/v11_admin.png', fullPage: true });
   await reset();
   check(!errs.length, 'no page errors ' + errs.join('; '));

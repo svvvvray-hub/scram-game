@@ -111,3 +111,54 @@ test('stats persist to STATS_FILE with throttled writes, settings survive restar
   assert.strictEqual(s2.data().totals.games, 2); assert.deepStrictEqual(s2.data().settings, { paused: true, maxGames: 7, maxPerHour: 4 });
   assert.strictEqual(s2.canCreate(0), 'paused');
 });
+
+test('stats.handle: normalize, validate, dedupe, first/last seen, games, ref', () => {
+  let t = Date.UTC(2026, 0, 1); const s = createStats({ file: null, now: () => t });
+  assert.strictEqual(s.handle('@Murray.Hunts', { ref: 'Lena' }), 'murray.hunts');
+  for (const bad of ['', '@', 'has space', 'bad-dash', 'a'.repeat(31), '<script>', 'ü', null, 42]) assert.strictEqual(s.handle(bad), null, String(bad));
+  assert.strictEqual(s.handle('a'.repeat(30)), 'a'.repeat(30));
+  t += 3600e3; s.handle('murray.hunts', { played: true, ref: 'other' }); s.handle('MURRAY.HUNTS', { played: true });
+  const r = s.data().handles['murray.hunts'];
+  assert.deepStrictEqual(r, { first: '2026-01-01T00:00:00.000Z', last: '2026-01-01T01:00:00.000Z', games: 2, ref: 'lena' });
+  assert.strictEqual(Object.keys(s.data().handles).length, 2);
+  assert.deepStrictEqual(s.handleList('games').map(h => h.handle), ['murray.hunts', 'a'.repeat(30)]);
+  assert.strictEqual(s.summary({}).handleCount, 2);
+});
+
+test('instagram handles: recorded from players, admin-only (dashboard, stats.json, csv), never on public endpoints', async () => {
+  const a = await boot();
+  try {
+    const h = await act(a, 'create', { dev: 'd1', ig: '@Host_IG', ref: 'murray' });
+    const j = await act(a, 'join', { code: h.joined.code, dev: 'd2', ig: 'https://instagram.com/joiner.one' });
+    const k = await act(a, 'join', { code: h.joined.code, dev: 'd3' }); // no handle
+    k.send({ type: 'ig', ig: 'bad handle!' }); // invalid -> not recorded
+    await sleep(50); h.send({ type: 'start' }); await until(() => a.stats.data().handles.host_ig?.games === 1);
+    const hs = a.stats.data().handles;
+    assert.deepStrictEqual(Object.keys(hs).sort(), ['host_ig', 'joiner.one']);
+    assert.strictEqual(hs.host_ig.ref, 'murray'); assert.strictEqual(hs['joiner.one'].games, 1); assert.strictEqual(hs['joiner.one'].ref, null);
+    // auth required
+    assert.strictEqual((await fetch(a.base + '/admin/handles.csv')).status, 401);
+    assert.strictEqual((await fetch(a.base + '/admin/handles.csv?key=nope')).status, 401);
+    assert.strictEqual((await fetch(a.base + '/admin/stats.json')).status, 401);
+    const csvR = await fetch(a.base + '/admin/handles.csv?key=sekret-123'); assert.strictEqual(csvR.status, 200);
+    assert.match(csvR.headers.get('content-type'), /text\/csv/); assert.match(csvR.headers.get('content-disposition'), /attachment/);
+    const csv = await csvR.text(); assert.match(csv, /^handle,profile_url,first_seen,last_seen,games,ref\r\n/);
+    assert.match(csv, /host_ig,https:\/\/www\.instagram\.com\/host_ig,[^,]+,[^,]+,1,murray/);
+    const s = await (await fetch(a.base + '/admin/stats.json?key=sekret-123')).json();
+    assert.strictEqual(s.handleCount, 2); assert.ok(s.handles.some(x => x.handle === 'joiner.one' && x.games === 1));
+    const ck = (await fetch(a.base + '/admin?key=sekret-123', { redirect: 'manual' })).headers.get('set-cookie').split(';')[0];
+    const html = await (await fetch(a.base + '/admin', { headers: { cookie: ck } })).text();
+    const g = await (await fetch(a.base + '/admin?sort=games', { headers: { cookie: ck } })).text(); assert.match(g, /Games ▼/);
+    assert.strictEqual((await fetch(a.base + '/admin/handles.csv', { headers: { cookie: ck } })).status, 200, 'cookie auth works for csv');
+    assert.match(html, /Players with Instagram/); assert.match(html, /href="https:\/\/www\.instagram\.com\/host_ig"/); assert.match(html, /\/admin\/handles\.csv/);
+    const byGames = await (await fetch(a.base + '/admin?sort=games', { headers: { cookie: 'x=1' } })).status; assert.strictEqual(byGames, 401);
+    // public endpoints never expose saved handles
+    for (const p of ['/', '/privacy', '/play', '/api/share', '/admin/handles.csv?key=']) { const r = await fetch(a.base + p, { redirect: 'manual' }); const t = await r.text(); assert.ok(!/host_ig|joiner\.one/i.test(t), p); }
+  } finally { a.server.close(); }
+});
+
+test('handles persist in STATS_FILE', async () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lp-')), 'stats.json');
+  const s = createStats({ file: f, throttleMs: 10 }); s.handle('keep.me', { ref: 'x' }); s.flush();
+  const s2 = createStats({ file: f }); assert.strictEqual(s2.data().handles['keep.me'].ref, 'x');
+});

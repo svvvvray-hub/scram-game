@@ -554,13 +554,13 @@ function createApp(opts = {}) {
         const dev = typeof m.dev === 'string' ? m.dev : null, ref = Recap.igHandle(m.ref || '') || null;
         if (m.type === 'create') {
           if (stats.canCreate(liveCounts().games)) return send(ws, { type: 'error', error: BUSY_MSG, busy: true });
-          L = newLobby(); me = addPlayer(L, m.name, m.ig); stats.gameCreated(dev, ref);
+          L = newLobby(); me = addPlayer(L, m.name, m.ig); stats.gameCreated(dev, ref); if (me.ig) stats.handle(me.ig, { ref });
         }
         else if (m.type === 'join') {
           L = lobbies.get(String(m.code || '').toUpperCase());
           if (!L) return send(ws, { type: 'error', error: 'Lobby not found' });
           if (L.players.size >= MAX_PLAYERS) { const n = L.players.size; L = null; return send(ws, { type: 'error', error: `Lobby is full (${n}/${MAX_PLAYERS})`, full: true }); }
-          me = addPlayer(L, m.name, m.ig); stats.player(dev, ref);
+          me = addPlayer(L, m.name, m.ig); stats.player(dev, ref); if (me.ig) stats.handle(me.ig, { ref });
           if (L.state === 'playing' || L.state === 'hiding') me.role = 'hunter'; // late joiners hunt (can't be fairly hidden)
         } else if (m.type === 'rejoin') {
           L = lobbies.get(String(m.code || '').toUpperCase());
@@ -596,7 +596,7 @@ function createApp(opts = {}) {
           else send(ws, viewFor(L, me));
           break;
         }
-        case 'ig': me.ig = Recap.igHandle(m.ig); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
+        case 'ig': me.ig = Recap.igHandle(m.ig); if (me.ig) stats.handle(me.ig); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
         case 'perm': me.perm = ['granted', 'denied', 'prompt', 'unsupported', 'error'].includes(m.perm) ? m.perm : 'unknown'; broadcast(L); break;
         case 'settings': if (host && L.state === 'lobby') {
           const s = m.settings || {};
@@ -632,7 +632,7 @@ function createApp(opts = {}) {
             const outside = ps.filter(p => !p.loc || !Field.inField(L.field, p.loc)).map(p => ({ id: p.id, name: p.name, noGps: !p.loc }));
             if (outside.length) return send(ws, { type: 'startBlocked', outside });
           }
-          const t = now(); L.startedAt = t; stats.gameStarted(); L.hideEndsAt = t + L.settings.hideSec * 1000;
+          const t = now(); L.startedAt = t; stats.gameStarted(); for (const p of L.players.values()) if (p.ig) stats.handle(p.ig, { played: true }); L.hideEndsAt = t + L.settings.hideSec * 1000;
           L.endsAt = L.hideEndsAt + L.settings.gameSec * 1000;
           L.chimeTest = null;
           L.state = L.settings.hideSec > 0 ? 'hiding' : 'playing'; L.round++; L.pings = []; L.events = [];
