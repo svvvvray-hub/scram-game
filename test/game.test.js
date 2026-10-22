@@ -569,3 +569,24 @@ test('battery saver: server sends need_fix to every phone ~5 s (scaled) before e
   }
   a.server.close(); [host, ...hs].forEach(c => c.ws.terminate());
 });
+
+test('v10: disconnected hider keeps slot through 10+ min grace; peek + rejoin restore role/team/state', async () => {
+  let skew = 0; const a = createApp({ tickMs: 20, minSec: 0.1, defaultMode: 'custom', now: () => Date.now() + skew });
+  await new Promise(r => a.server.listen(0, r)); a.url = `ws://127.0.0.1:${a.server.address().port}/ws`;
+  const { host, hs, code } = await setup(a, { gameSec: 3600, pingSec: 600, hideSec: 0 });
+  host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  const h0 = hs[0], { id, token } = h0.joined; h0.ws.terminate();
+  await until(() => host.state.players.find(p => p.id === id).connected === false);
+  skew = a.DISCONNECT_GRACE_MS + 60000; await sleep(150); // 11 min later
+  const L = a.lobbies.get(code); assert.ok(L, 'lobby alive'); const p = L.players.get(id);
+  assert.ok(p && !p.caught && p.role === 'hider', 'slot kept, not caught'); assert.equal(L.state, 'playing');
+  const pk = client(a.url, 'peek'); await pk.open; pk.send({ type: 'peek', code, token });
+  await until(() => pk.msgs.some(m => m.type === 'session'));
+  assert.deepStrictEqual(pk.msgs.find(m => m.type === 'session'), { type: 'session', ok: true, code, state: 'playing', name: 'Hider0', role: 'hider', caught: false });
+  pk.send({ type: 'peek', code, token: 'nope' }); await until(() => pk.msgs.filter(m => m.type === 'session').length === 2);
+  assert.equal(pk.msgs.filter(m => m.type === 'session')[1].ok, false);
+  const r = client(a.url, 'Hider0'); await r.open; r.send({ type: 'rejoin', code, token }); await until(() => r.joined && r.state);
+  assert.equal(r.joined.id, id); assert.equal(r.state.state, 'playing');
+  assert.equal(host.state.players.length, 3); assert.ok(host.state.players.find(p => p.id === id).connected);
+  a.server.close(); [host, hs[1], pk, r].forEach(c => c.ws.terminate());
+});

@@ -28,7 +28,9 @@ function connect() {
   ws.onopen = () => {
     clearTimeout(guard); retry = 0; $('btnCreate').disabled = $('btnJoin').disabled = false; $('btnCreate').textContent = 'Create game'; if ($('btnJoin').dataset.code) $('btnJoin').textContent = 'Join game ' + $('btnJoin').dataset.code; document.body.dataset.ready = '1';
     if (pendingAction) { ws.send(JSON.stringify(pendingAction)); pendingAction = null; }
-    else if (sess && (!qcode || qcode === sess.code)) ws.send(JSON.stringify({ type: 'rejoin', code: sess.code, token: sess.token }));
+    else if (sess && (!qcode || qcode === sess.code) && !S) ws.send(JSON.stringify({ type: 'rejoin', code: sess.code, token: sess.token })); // auto-rejoin (load / reconnect / page visible again)
+    else if (sess && S && S.code === sess.code) ws.send(JSON.stringify({ type: 'rejoin', code: sess.code, token: sess.token }));
+    else if (sess) ws.send(JSON.stringify({ type: 'peek', code: sess.code, token: sess.token })); // different invite opened: offer a Rejoin button
   };
   ws.onmessage = e => { lastMsgAt = Date.now(); syncSentAt = 0; handle(JSON.parse(e.data)); };
   ws.onclose = () => { if (sock !== ws) return; setTimeout(connect, Math.min(5000, 500 * 2 ** retry++)); if (S) toast('Reconnecting…'); };
@@ -36,7 +38,8 @@ function connect() {
 const sendMsg = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
 
 function handle(m) {
-  if (m.type === 'joined') { sess = { code: m.code, token: m.token }; localStorage.setItem('scram', JSON.stringify(sess)); history.replaceState(null, '', '/?code=' + m.code); startGps(); maybeSend(true); }
+  if (m.type === 'session') { if (m.ok && m.state !== 'ended') showRejoin(m); else { $('btnRejoin').classList.add('hidden'); if (!m.ok) { sess = null; localStorage.removeItem('scram'); } } }
+  else if (m.type === 'joined') { $('btnRejoin').classList.add('hidden'); sess = { code: m.code, token: m.token, id: m.id, at: Date.now() }; localStorage.setItem('scram', JSON.stringify(sess)); history.replaceState(null, '', '/?code=' + m.code); startGps(); maybeSend(true); }
   else if (m.type === 'error') { toast(m.error, 4000); if (m.reset) { sess = null; localStorage.removeItem('scram'); show('home'); } }
   else if (m.type === 'left') { resetLocal(); toast('You left the lobby'); }
   else if (m.type === 'gone') { toast(m.kicked ? 'Removed from lobby' : 'Lobby closed'); sess = null; S = null; localStorage.removeItem('scram'); show('home'); }
@@ -172,6 +175,7 @@ async function wake() {
 }
 function releaseWake() { const l = wakeLock; wakeLock = null; if (l) l.release().catch(() => {}); }
 window.Wake = { sync: wake, release: releaseWake, get held() { return !!wakeLock; }, get supported() { return 'wakeLock' in navigator; } };
+window.addEventListener('pageshow', e => { if (e.persisted && ws?.readyState !== 1) { try { ws.close(); } catch {} } });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { wake(); if (ws?.readyState !== 1) { try { ws.close(); } catch {} } else sendMsg({ type: 'sync' }); maybeSend(true); if (S) render(); }
 });
@@ -694,3 +698,20 @@ function coachState(m) {
 }
 setInterval(() => { if (window.Rec?.recording) coach('record'); }, 1000);
 window.Coach = { show: coach, TIPS, reset: resetTips };
+
+// ---- v10: rejoin button + in-app browser escape hatch
+function showRejoin(m) {
+  const b = $('btnRejoin'); b.classList.remove('hidden');
+  b.textContent = `↩️ Rejoin game ${m.code} as ${m.name}` + (m.state === 'lobby' ? '' : ` (${m.caught ? 'caught' : m.role})`);
+}
+$('btnRejoin').onclick = () => { if (!sess) return; unlockAudio?.(); sendMsg({ type: 'rejoin', code: sess.code, token: sess.token }); };
+(function inAppBanner() {
+  const r = window.InApp && InApp.detect(navigator.userAgent); if (!r || !r.inApp) return;
+  document.body.dataset.inapp = r.app; const box = $('inapp'); box.classList.remove('hidden');
+  $('inappApp').textContent = r.app === 'WebView' ? 'an app' : r.app;
+  const link = () => { const u = new URL(location.href); const c = $('code').value.trim().toUpperCase(); if (c && !u.searchParams.get('code')) u.searchParams.set('code', c); return u.href; };
+  if (r.os === 'android') { const a = $('btnChrome'); a.classList.remove('hidden'); a.href = InApp.chromeIntent(link()); a.onclick = () => { a.href = InApp.chromeIntent(link()); }; }
+  else if (r.os === 'ios') { $('inappIos').classList.remove('hidden'); $('inappArrow').classList.remove('hidden'); }
+  $('btnCopyLink').onclick = async () => { const u = link(); try { await navigator.clipboard.writeText(u); toast('Link copied — paste it into ' + (r.os === 'ios' ? 'Safari' : 'Chrome')); } catch { prompt('Copy this link:', u); } };
+  $('inappClose').onclick = () => box.classList.toggle('mini'); // minimizes, but stays on the join screen
+})();

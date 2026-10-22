@@ -323,3 +323,8 @@ that forces drop types): `PORT=3001 SCRAM_TEST_PU=hider:radar,hunter:sonar node 
   - **New e2e:** `node test/e2e_v9.js` against a server with real defaults (`PORT=3002 node server.js`).
   - **Older e2e suites:** run against `SCRAM_DEFAULT_MODE=custom node server.js` (the old everything-on defaults) and set `localStorage.scramQuiet=1` to skip the role card and tips. Those two are test-only hooks.
 - **Screenshots:** `shots/v9_*.png`.
+
+### v10: in-app browsers + rejoin
+- `public/inapp.js` — `InApp.detect(ua)` → `{ inApp, app, os }` (Zalo, Facebook, Instagram, Messenger, Line, TikTok, WeChat, Snapchat, Android `; wv)`), `InApp.chromeIntent(href)` → Chrome `intent://` URL keeping the code/ref query. Android shows **Open in Chrome**; iOS shows an arrow + "tap ⋯ / share → Open in Safari" + Copy link. The × minimizes; the banner stays on the join screen.
+- Rejoin: `localStorage.scram = { code, token, id }`. Auto-rejoin on load (same/no invite code), socket reconnect, visibilitychange and bfcache `pageshow`; opening a different link sends `peek` and shows a **Rejoin game** button. Server keeps a disconnected slot (role, team, caught state) for the lobby's life (≥ `DISCONNECT_GRACE_MS` = 10 min); disconnecting never marks anyone caught or removed.
+- Tests: `test/inapp.test.js`, v10 case in `game.test.js`, e2e `PORT=3010 node server.js` then `node test/e2e_v10.js`.

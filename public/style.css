@@ -173,3 +173,15 @@ input.prefilled{border-color:var(--you);box-shadow:0 0 0 3px #22c55e44}
 body.inGame #recQBtn{display:none}body.inGame:not(.recording) #recDock{top:auto;bottom:calc(120px + env(safe-area-inset-bottom))}
 #actionBar .abCaught small{white-space:normal;line-height:1.05;text-align:center}
 .modeBox{background:var(--card);border-radius:14px;padding:10px 12px;margin-top:10px}.modeBox .modeDesc{margin:4px 0 0}
+
+/* v10: in-app browser warning + rejoin */
+.inapp{position:relative;background:#7c2d12;border:2px solid #fb923c;border-radius:14px;padding:14px 14px 6px;margin:0 0 12px;color:#fff}
+.inappTitle{font-weight:800;font-size:1.1em;padding-right:28px}.inappMsg{margin:8px 0}
+.inappClose{position:absolute;top:6px;right:6px;background:transparent;border:0;color:#fff;font-size:1.4em;padding:4px 10px}
+.inapp.mini .inappMsg,.inapp.mini .inappArrow{display:none}.inapp.mini .big{padding:10px;font-size:1em;margin:6px 0}
+.inappArrow{position:fixed;top:4px;right:14px;font-size:2.4em;color:#fb923c;animation:inappBob 1s ease-in-out infinite;z-index:50;pointer-events:none}
+@keyframes inappBob{50%{transform:translateY(-8px)}}
+.btnLink{text-align:center;text-decoration:none;box-sizing:border-box;border-radius:12px}
+#btnRejoin{background:#16a34a;margin-top:56px}body[data-inapp] #btnRejoin{margin-top:0}
+.btnLink,.btnLink:visited{color:#fff}
+body[data-inapp]:not(.inGame):not(.recording) #recDock{top:auto;bottom:calc(12px + env(safe-area-inset-bottom))}

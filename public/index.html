@@ -5,6 +5,16 @@
 <link rel="stylesheet" href="style.css"></head><body>
 <div id="app">
 <section id="home" class="screen">
+  <div id="inapp" class="inapp hidden" role="alert">
+    <div id="inappArrow" class="inappArrow hidden">⬆</div>
+    <button id="inappClose" class="inappClose" aria-label="Minimize">×</button>
+    <div class="inappTitle">⚠️ You're in <b id="inappApp">an app</b>'s browser</div>
+    <p id="inappMsg" class="inappMsg">It can close the game when you switch chats. Open this link in your real browser.</p>
+    <a id="btnChrome" class="big primary btnLink hidden" href="#">🌐 Open in Chrome</a>
+    <p id="inappIos" class="inappMsg hidden">Tap the <b>⋯</b> or <b>share</b> menu (top or bottom corner) and choose <b>Open in Safari</b> (or <b>Open in browser</b>).</p>
+    <button id="btnCopyLink" class="big">📋 Copy link</button>
+  </div>
+  <button id="btnRejoin" class="big primary hidden">↩️ Rejoin game</button>
   <h1>🏃 Scram</h1><p class="sub">GPS hide &amp; seek in your browser</p>
   <label>Your name<input id="name" maxlength="20" autocomplete="nickname" placeholder="e.g. Murray"></label>
   <label>Instagram (optional)<input id="ig" maxlength="80" autocomplete="off" autocapitalize="none" placeholder="@yourhandle"></label>
@@ -191,6 +201,7 @@
 <script src="icons.js"></script>
 <script src="gps.js"></script>
 <script src="recap.js"></script>
+<script src="inapp.js"></script>
 <script src="app.js"></script>
 <script src="record.js"></script>
 <script src="recapui.js"></script>

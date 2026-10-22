@@ -10,7 +10,9 @@ const Recap = require('./public/recap');
 const PU = require('./powerups');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
-const MAX_GAME_MS = 6 * 3600 * 1000;      // safety cap for a single running round
+const MAX_GAME_MS = 6 * 3600 * 1000;
+const DISCONNECT_GRACE_MS = 10 * 60 * 1000; // a dropped player's slot (role/team/caught state) is kept at least this long; in practice until the lobby ends
+      // safety cap for a single running round
 const STALE_MS = 45 * 1000;
 const CHIME_THROTTLE = 1500;
 const HL_TTL = 30 * 60 * 1000;           // uploaded highlight cuts live 30 min max (memory only)
@@ -552,8 +554,11 @@ function createApp(opts = {}) {
           me = L && [...L.players.values()].find(p => p.token === m.token);
           if (!me) { L = null; return send(ws, { type: 'error', error: 'Session expired', reset: true }); }
           if (me.ws && me.ws !== ws) try { me.ws.close(); } catch {}
+        } else if (m.type === 'peek') { // pre-rejoin check: is my saved session still alive? (token-gated, no locations)
+          const PL = lobbies.get(String(m.code || '').toUpperCase()), p = PL && [...PL.players.values()].find(x => x.token === m.token);
+          return send(ws, p ? { type: 'session', ok: true, code: PL.code, state: PL.state, name: p.name, role: p.role, caught: p.caught } : { type: 'session', ok: false });
         } else return;
-        me.ws = ws; me.connected = true;
+        me.ws = ws; me.connected = true; me.discAt = 0;
         send(ws, { type: 'joined', code: L.code, id: me.id, token: me.token });
         broadcast(L);
         if (L.state === 'ended') send(ws, { type: 'recap', recap: buildRecap(L) });
@@ -672,14 +677,14 @@ function createApp(opts = {}) {
         case 'leave': leave(L, me); me = null; L = null; break;
       }
     });
-    ws.on('close', () => { if (me && L && me.ws === ws) { me.ws = null; me.connected = false; if (lobbies.has(L.code)) broadcast(L); } });
+    ws.on('close', () => { if (me && L && me.ws === ws) { me.ws = null; me.connected = false; me.discAt = now(); if (lobbies.has(L.code)) broadcast(L); /* slot kept: never removed or marked caught for disconnecting */ } });
   });
 
   // keepalive so tunnels don't drop idle sockets
   wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); });
   const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
   server.on('close', () => { clearInterval(timer); clearInterval(hb); });
-  return { app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
+  return { DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
 module.exports = { createApp, distM, bearingDeg, offsetM };
