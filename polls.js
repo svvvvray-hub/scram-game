@@ -1,8 +1,9 @@
 'use strict';
 // "Plan the next game" polls (whenisgood-style): 2-8 time options (UTC ms) x 1-3 places, no sign-up voting
 // (name + optional handle), live tally, best combination, creator-only lock, .ics export.
-// Polls live in the stats JSON (stats.data().polls) so they survive restarts only where STATS_FILE does
-// (NOT on Render's free plan: its disk resets on restart / spin-down). Expire 14 days after the latest option.
+// Polls live in memory in stats.data().polls and are persisted by the stats store: Supabase (one row per poll in
+// lastping_polls, fetched on demand by ensure() if not in memory) or, without Supabase, the STATS_FILE JSON.
+// Expire 14 days after the latest option (swept hourly / on access; expired rows are deleted remotely too).
 const crypto = require('crypto');
 const Socials = require('./public/socials');
 
@@ -96,7 +97,13 @@ function createPolls({ stats, now = () => Date.now(), limits = {} } = {}) {
   function summary(limit = 15) { sweep(); const P = Object.values(all()).sort((a, b) => b.createdAt - a.createdAt), T = store().pollTotals;
     return { active: P.length, created: T.created, votes: T.votes, locked: T.locked, voters: P.reduce((s, p) => s + p.voters.length, 0), max: LIM.maxActive,
       recent: P.slice(0, limit).map(p => ({ code: p.code, by: p.by, createdAt: p.createdAt, times: p.times.length, places: p.places.length, voters: p.voters.length, locked: !!p.locked, expiresAt: p.expiresAt, first: p.times[0] })) }; }
-  return { create, vote: castVote, lock, get, view: code => { const p = get(code); return p && view(p); }, mine: (code, voter) => { const p = get(code); return p && mine(p, voter); },
+  // Make sure a poll is in memory: if not, look it up in the remote store (Supabase) once. Resolves to true if it exists.
+  async function ensure(code) { const c = String(code || '').toUpperCase(); if (!CODE_RE.test(c)) return false; if (get(c)) return true;
+    if (!stats.fetchPoll) return false;
+    const p = await stats.fetchPoll(c).catch(() => null);
+    if (p && p.code === c && Number(p.expiresAt) > now() && Array.isArray(p.times) && Array.isArray(p.places) && Array.isArray(p.voters) && !all()[c]) all()[c] = p;
+    return !!get(c); }
+  return { create, vote: castVote, ensure, lock, get, view: code => { const p = get(code); return p && view(p); }, mine: (code, voter) => { const p = get(code); return p && mine(p, voter); },
     isCreator, sweep, summary, activeCount, tally, LIMITS: LIM };
 }
 

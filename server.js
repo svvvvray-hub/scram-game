@@ -10,6 +10,7 @@ const Recap = require('./public/recap');
 const Socials = require('./public/socials');
 const PU = require('./powerups');
 const { createStats, normHandle } = require('./stats');
+const { createSupabaseStore } = require('./supabase');
 const Admin = require('./admin');
 const { createPolls, ics: pollIcs, CODE_RE: POLL_RE } = require('./polls');
 
@@ -74,8 +75,12 @@ function createApp(opts = {}) {
   const refs = new Map(), env = opts.env || process.env;
   const DEFAULT_MODE = MODES[opts.defaultMode ?? env.SCRAM_DEFAULT_MODE] ? (opts.defaultMode ?? env.SCRAM_DEFAULT_MODE) : 'classic'; // test hook: legacy suites use 'custom' (everything on)
   const MAX_PLAYERS = Math.round(clampNum0(opts.maxPlayers ?? env.MAX_PLAYERS, 2, 500, 20)); // per lobby
+  // Persistence: Supabase (SUPABASE_URL + SUPABASE_SERVICE_KEY, server-only) when set, else the STATS_FILE JSON (local runs / tests)
+  const persist = opts.stats ? null : opts.persist !== undefined ? opts.persist : (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY)
+    ? createSupabaseStore({ url: env.SUPABASE_URL, key: env.SUPABASE_SERVICE_KEY, now, throttleMs: opts.statsThrottleMs ?? 5000, log: opts.quiet ? { error() {}, log() {} } : console, ...(opts.supabase || {}) }) : null;
   const stats = opts.stats || createStats({ file: opts.statsFile !== undefined ? opts.statsFile : process.env.NODE_TEST_CONTEXT ? null : (env.STATS_FILE || path.join(__dirname, 'data', 'stats.json')),
-    now, throttleMs: opts.statsThrottleMs ?? 5000, maxGames: Math.round(clampNum0(env.MAX_GAMES, 0, 100000, 50)) });
+    now, throttleMs: opts.statsThrottleMs ?? 5000, maxGames: Math.round(clampNum0(env.MAX_GAMES, 0, 100000, 50)), persist });
+  const ready = stats.ready || (stats.ready = stats.persist ? stats.persist.start({ waitMs: opts.storageWaitMs ?? 10000 }) : Promise.resolve(true));
   const liveCounts = () => { let games = 0, playing = 0, players = 0, online = 0; for (const L of lobbies.values()) { if (L.state === 'ended') continue; games++; if (L.state === 'playing' || L.state === 'hiding') playing++;
     for (const p of L.players.values()) { players++; if (p.ws) online++; } } return { games, playing, players, online }; };
   app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = normHandle(String(req.query.ref || '')); if (h) { refs.set(h, (refs.get(h) || 0) + 1); stats.visit(h); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
@@ -92,6 +97,8 @@ function createApp(opts = {}) {
   const pj = express.json({ limit: '8kb' });
   const pollErr = (res, e) => { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[poll]', e); res.status(500).json({ error: 'Server error' }); };
   const pollUrl = (req, code) => `${req.protocol}://${req.get('host')}/p/${code}`;
+  // polls survive restarts: if a poll is not in memory, look it up in Supabase before handling the request
+  app.use('/api/polls/:code', (req, res, next) => { polls.ensure(req.params.code).then(() => next(), () => next()); });
   app.post('/api/polls', pj, (req, res) => { try { const r = polls.create(req.body || {}, { ip: req.ip }); res.status(201).json(r); } catch (e) { pollErr(res, e); } });
   app.get('/api/polls/:code', (req, res) => { const v = polls.view(req.params.code); if (!v) return res.status(404).json({ error: 'Poll not found or expired' });
     res.set('Cache-Control', 'no-store').json({ ...v, mine: polls.mine(req.params.code, String(req.query.v || '')), creator: req.query.k ? polls.isCreator(req.params.code, String(req.query.k)) : undefined }); });
@@ -615,7 +622,7 @@ function createApp(opts = {}) {
       if (m.type === 'time') return send(ws, { type: 'time', c: Number(m.c) || 0, s: now() }); // NTP-style clock sync round trip
       if (m.type === 'pollSub') { const c = String(m.code || '').toUpperCase(); if (!POLL_RE.test(c)) return;
         if (ws.pollCode) pollSubs.get(ws.pollCode)?.delete(ws); ws.pollCode = c; if (!pollSubs.has(c)) pollSubs.set(c, new Set()); if (pollSubs.get(c).size < 200) pollSubs.get(c).add(ws);
-        const v = polls.view(c); return send(ws, v ? { type: 'poll', poll: v } : { type: 'poll', code: c, gone: true }); }
+        return void polls.ensure(c).catch(() => {}).then(() => { const v = polls.view(c); send(ws, v ? { type: 'poll', poll: v } : { type: 'poll', code: c, gone: true }); }); }
       if (!me) {
         if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
         const dev = typeof m.dev === 'string' ? m.dev : null, ref = normHandle(String(m.ref || '')) || null, social = socialIn(m);
@@ -770,13 +777,22 @@ function createApp(opts = {}) {
   // keepalive so tunnels don't drop idle sockets
   wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); ws.on('close', () => { if (ws.pollCode) { const s = pollSubs.get(ws.pollCode); s?.delete(ws); if (s && !s.size) pollSubs.delete(ws.pollCode); } }); });
   const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
-  server.on('close', () => { clearInterval(timer); clearInterval(hb); clearInterval(pollSweep); stats.flush(); });
-  return { stats, polls, liveCounts, DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
+  server.on('close', () => { clearInterval(timer); clearInterval(hb); clearInterval(pollSweep); Promise.resolve(stats.flush()).catch(() => {}); });
+  return { ready, stats, polls, liveCounts, DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
 module.exports = { BUSY_MSG, createApp, distM, bearingDeg, offsetM };
 if (require.main === module) {
-  const { server } = createApp({ revealMs: process.env.SCRAM_REVEAL_MS ?? 5500 });
+  const { server, stats, ready } = createApp({ revealMs: process.env.SCRAM_REVEAL_MS ?? 5500 });
   const port = process.env.PORT || 3000;
-  server.listen(port, () => console.log('Scram listening on :' + port));
+  const st = stats.storageStatus();
+  console.log(st.mode === 'supabase' ? `[storage] Supabase (${st.host})` : `[storage] ${st.mode === 'file' ? 'file fallback (' + st.file + ')' : 'memory only'}: set SUPABASE_URL + SUPABASE_SERVICE_KEY to persist in Supabase`);
+  // load from Supabase first (at most ~10 s; if it is down we start anyway, serve from memory and keep retrying)
+  ready.then(ok => { if (st.mode === 'supabase' && !ok) console.error('[storage] Supabase not reachable yet; starting from memory, retrying in the background');
+    server.listen(port, () => console.log('Scram listening on :' + port)); });
+  let stopping = false;
+  const shutdown = sig => { if (stopping) return; stopping = true; console.log(`[${sig}] flushing data and exiting`);
+    const force = setTimeout(() => process.exit(0), 15000); force.unref();
+    Promise.resolve(stats.close()).catch(e => console.error('[storage] final flush failed', e.message)).finally(() => process.exit(0)); };
+  process.on('SIGTERM', () => shutdown('SIGTERM')); process.on('SIGINT', () => shutdown('SIGINT'));
 }

@@ -8,10 +8,10 @@
 
 This summary is here to make the policy easier to read. It is not a substitute for it. The full policy below is what counts.
 
-- **No accounts, no database, no tracking cookies.** We run the game in server memory. When a round, lobby, or server ends, that game data is gone.
+- **No accounts, no tracking cookies.** We run the game in server memory. When a round, lobby, or server ends, that game data is gone. A small database, hosted by our provider Supabase, keeps only saved social media handles, next-game polls, and anonymous usage counts.
 - **Your location is the core of the game.** During a game your phone sends your GPS location to our server. Hunters see hiders' locations at each "ping," about every 60 seconds by default. Your location trail is kept in memory for the round so we can show the end-of-round recap. Then it is discarded.
 - **Other players see what you share:** your display name, your social media handle (e.g., Instagram, TikTok, X) if you add one, your role, your in-game status, and some of your location.
-- **Your social media handle is saved if you enter one.** It may be viewed by the game creator, for example to connect with players. Leave it blank, or ask us to delete it at any time and we will remove it.
+- **Your social media handle is saved if you enter one.** It is stored in our database (hosted by Supabase) and may be viewed by the game creator, for example to connect with players. Leave it blank, or ask us to delete it at any time and we will remove it.
 - **The camera snapshot is opt-in.** If you consent in the lobby, hunters see one photo from your rear camera at minute 10. It is kept in memory for that round only.
 - **Your video stays on your phone** unless you tap "Send my highlights to host." Then short highlight cuts go to the server and are kept in memory for **30 minutes at most**.
 - **We do not sell your personal information,** and we don't share it for targeted advertising.
@@ -36,8 +36,8 @@ Last Ping (the "**Game**") is a free, browser-based GPS hide-and-seek game. It i
 | **Camera snapshot** (optional; "hider cam sneak peek") | Minute 10, only if you're a hider and tapped "allow camera" in the lobby | Hunters in your lobby only | Server memory for that round only; never written to disk |
 | **Highlight cuts** (optional) | Only if you tap "Send my highlights to host" | The lobby host (for a group highlight reel) | Server memory for **30 minutes at most**, or less if Play again starts or the lobby closes |
 | **Video you record** | When you use Record | Only you; it stays on your device | We never receive it (unless you send highlights, as above) |
-| **Referral visits** | When someone opens a link with `?ref=<handle>` | Us | The count is kept in server memory; each visit is also written to our server logs (handle and page). See section 6 |
-| **Next-game poll votes** (optional) | You vote on a "Plan the next game" poll | Anyone with the poll link | Only the name and optional social media handle you type, plus your time/place picks; deleted 14 days after the poll's last time option (or sooner if the server restarts) |
+| **Referral visits** | When someone opens a link with `?ref=<handle>` | Us | The count per handle is kept with our anonymous usage statistics in our database (hosted by Supabase); each visit is also written to our server logs (handle and page). See section 6 |
+| **Next-game poll votes** (optional) | You vote on a "Plan the next game" poll | Anyone with the poll link | Only the name and optional social media handle you type, plus your time/place picks; stored in our database (hosted by Supabase) and deleted 14 days after the poll's last time option |
 | **Technical data** | Every request | Us, our host, and the map tile provider | See section 6 |
 
 We **do not** collect your real name, email address, phone number, contacts, or payment information. We do not ask for them, and we have no account system.
@@ -71,6 +71,7 @@ We do not use your location or other data for advertising, profiling, or any pur
 - **Other players in your lobby,** as described above. They may take screenshots, or download or share recap images and highlight reels. **Once they do, that copy is outside our control.** Play only with people you trust with this information.
 - **Service providers.** These process data on our behalf so the Game can run:
   - **Render** (render.com) hosts our server in the United States. It processes the traffic and server logs (see section 6).
+  - **Supabase** (supabase.com) hosts our database, in [SUPABASE REGION, e.g. US East (N. Virginia); confirm]. It stores only the items listed in section 7 as kept in our database: saved social media handles, next-game polls and votes, anonymous usage statistics (including referral counts), and our game settings. It acts only as our hosting provider.
   - **OpenStreetMap** map tiles are loaded directly by your browser from OpenStreetMap servers. Those servers receive your IP address and the map area being viewed, as with any website request. See the OpenStreetMap Foundation's privacy policy.
   - **Social media platforms (e.g., Instagram, TikTok, X):** if you tap a player's handle or "Follow," you leave the Game and go to that platform, where its own privacy policy applies.
 - **Legal reasons:** we may disclose information if the law requires it, or to protect someone's safety. Because we keep almost nothing, we usually have nothing to disclose.
@@ -84,7 +85,7 @@ Like most websites, our server and our hosting provider automatically handle tec
 
 ## 7. How long we keep information
 
-The Game has **no database**. Apart from saved social media handles (see below), all game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:
+Our database (hosted by Supabase, see section 5) holds only: saved social media handles (see below), next-game polls and votes, anonymous usage statistics (daily counts, hashed random device ids, referral counts, share counts), and our game settings. All other game data, including names, locations, trails, photos, and highlights, lives only in server memory and is never written to the database. It is deleted:
 
 - **at "Play again"** (trails, catches, photos, recaps, and highlights from the previous round are wiped);
 - **when you leave the lobby** (your player entry is removed);
@@ -92,9 +93,9 @@ The Game has **no database**. Apart from saved social media handles (see below),
 - **when the server restarts or sleeps**, which on our free hosting can happen after a period of inactivity; and
 - **for highlight cuts, after 30 minutes at most.**
 
-**Social media handles.** If you enter a social media handle (e.g., Instagram, TikTok, X), it is saved together with the platform you picked (with when we first and last saw it, how many games you played, and the invite tag that brought you, if any) and may be viewed by the game creator, for example to connect with players. You can leave the field blank, or ask us to delete your saved handle by contacting us (see the Contact section).
+**Social media handles.** If you enter a social media handle (e.g., Instagram, TikTok, X), it is saved in our database (hosted by Supabase) together with the platform you picked (with when we first and last saw it, how many games you played, and the invite tag that brought you, if any) until you ask us to delete it, and may be viewed by the game creator, for example to connect with players. You can leave the field blank, or ask us to delete your saved handle by contacting us (see the Contact section).
 
-Referral visit counts are kept in memory until the server restarts. Server logs are kept as described in section 6.
+Anonymous usage statistics, including referral visit counts, are kept in our database to understand how the Game grows. When we delete a handle on request, it is deleted from the database. Server logs are kept as described in section 6.
 
 ## 8. Your choices
 
@@ -150,11 +151,11 @@ The Game currently has **no payments and no ads**. We may later add:
 
 ## 12. Security
 
-We limit what we collect and keep it only in memory, and that is our main protection. The Game is served over HTTPS. Hiders' coordinates are sent to hunters only at ping time. However, no system is perfectly secure. Anyone with a lobby code or link can join that lobby, so share codes only with people you intend to play with.
+We limit what we collect and keep most of it only in memory, and that is our main protection. The few items in our database are reachable only by our server with a secret key; the database blocks all public access. The Game is served over HTTPS. Hiders' coordinates are sent to hunters only at ping time. However, no system is perfectly secure. Anyone with a lobby code or link can join that lobby, so share codes only with people you intend to play with.
 
 ## 13. International users
 
-The Game is operated from, and hosted in, the United States. If you use it from elsewhere, your information will be processed in the United States.
+The Game is operated from, and hosted in, the United States (our server at Render; our database at Supabase, in [SUPABASE REGION; confirm]). If you use it from elsewhere, your information will be processed in the United States.
 
 ## 14. Changes to this policy
 

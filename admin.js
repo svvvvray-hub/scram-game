@@ -23,14 +23,14 @@ function mount(app, { env, stats, liveCounts, polls = null }) {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(req.query.key !== undefined)));
     if (req.query.key !== undefined) { setCookie(req, res); return res.redirect(303, '/admin'); } // strip the key from the URL / history
     const sort = req.query.sort === 'games' ? 'games' : 'last', pf = Socials.isPlatform(req.query.platform) ? req.query.platform : '';
-    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(sort, pf || null), sort, pf, req.query.deleted, polls && polls.summary())));
+    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(sort, pf || null), sort, pf, req.query.deleted, polls && polls.summary(), stats.storageStatus?.())));
   });
   app.post('/admin/login', gate, form, (req, res) => {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(true)));
     setCookie(req, res); res.redirect(303, '/admin');
   });
   app.post('/admin/logout', gate, (req, res) => { res.clearCookie(COOKIE, { path: '/admin' }); res.redirect(303, '/admin'); });
-  app.get('/admin/stats.json', gate, (req, res) => { if (!authed(req)) return res.status(401).json({ error: 'unauthorized' }); res.json({ ...stats.summary(liveCounts()), polls: polls ? polls.summary() : null }); });
+  app.get('/admin/stats.json', gate, (req, res) => { if (!authed(req)) return res.status(401).json({ error: 'unauthorized' }); res.json({ ...stats.summary(liveCounts()), polls: polls ? polls.summary() : null, storage: stats.storageStatus?.() || null }); });
   const csv = (req, res) => {
     if (!authed(req)) return res.status(401).type('text').send('Unauthorized');
     const q = v => { v = String(v ?? ''); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -83,13 +83,26 @@ function chart(days, field, color) { // inline SVG bar chart, 30 days
 <text x="0" y="12">${max}</text><text x="0" y="${H - 18}">0</text>${bars}<text x="${pad}" y="${H - 3}">${days[0].day.slice(5)}</text><text x="${W}" y="${H - 3}" text-anchor="end">today</text></svg>`;
 }
 
-function dashboard(s, saved, handles = s.handles, sort = 'last', pf = '', deleted, ps = null) {
+// one-line storage status (no keys or URLs with secrets: host name only)
+function storageLine(st) {
+  if (!st) return '';
+  const when = ms => ms ? esc(new Date(ms).toISOString().slice(0, 19).replace('T', ' ')) + ' UTC' : 'never';
+  let icon, text;
+  if (st.mode === 'supabase') {
+    if (st.connected) { icon = '🟢'; text = `Storage: <b>Supabase connected</b> (${esc(st.host)}) · last successful save ${when(st.lastSaveAt)}${st.lastSaveAt ? '' : ' (nothing changed since load)'} · loaded ${when(st.lastLoadAt)}`; }
+    else { icon = '🔴'; text = `Storage: <b>Supabase ${st.loaded ? 'errors' : 'not loaded yet'}</b> (${esc(st.host)}): serving from memory and retrying${st.retryInMs ? ' in ' + Math.ceil(st.retryInMs / 1000) + ' s' : ''} · last successful save ${when(st.lastSaveAt)}${st.lastError ? ' · last error: ' + esc(String(st.lastError).slice(0, 160)) : ''}`; }
+  } else if (st.mode === 'file') { icon = '🟡'; text = `Storage: <b>file fallback</b> (${esc(st.file || 'STATS_FILE')}) · last successful save ${when(st.lastSaveAt)} · not persistent on Render's free plan: set SUPABASE_URL and SUPABASE_SERVICE_KEY`; }
+  else { icon = '🟡'; text = `Storage: <b>memory only</b> (no STATS_FILE, no Supabase): data is lost on restart`; }
+  return `<div class="card" id="storage" data-mode="${esc(st.mode)}" data-connected="${st.connected ? '1' : '0'}" style="margin-bottom:14px;padding:10px 14px">${icon} ${text}</div>`;
+}
+function dashboard(s, saved, handles = s.handles, sort = 'last', pf = '', deleted, ps = null, storage = null) {
   const c = (n, l) => `<div class="card"><div class="big">${esc(n)}</div><div class="lbl">${esc(l)}</div></div>`;
   const t = s.days[s.days.length - 1], st = s.settings;
   const refRows = s.refs.length ? s.refs.map(r => `<tr><td>@${esc(r.ref)}</td><td class="n">${r.players}</td><td class="n">${r.games}</td><td class="n">${r.visits}</td></tr>`).join('') : '<tr><td colspan="4" class="lbl">No ?ref traffic yet</td></tr>';
   const shares = Object.entries(s.shares); const shareRows = shares.length ? shares.map(([k, n]) => `<tr><td>${k === 'viral' ? 'Make it viral' : k === 'reel' ? 'Reel share' : esc(k)}</td><td class="n">${n}</td></tr>`).join('') : '<tr><td colspan="2" class="lbl">No shares yet</td></tr>';
   return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h1>📡 Last Ping · growth</h1><p class="sub">Private dashboard · anonymous device ids · last 30 days</p></div>
 <form method="post" action="/admin/logout"><button class="ghost">Sign out</button></form></div>
+${storageLine(storage)}
 ${saved ? '<div class="ok">✅ Brake settings saved</div>' : ''}${deleted === '1' ? '<div class="ok" id="deletedMsg">🗑️ Handle deleted</div>' : deleted === '0' ? '<div class="ok err" id="deletedMsg">Handle not found</div>' : ''}
 <form method="post" action="/admin/settings" class="card brake" style="margin-bottom:14px"><input type="hidden" name="form" value="1">
 <h2>🛑 Brake switch <span class="pill ${st.paused ? 'on' : 'off'}">${st.paused ? 'NEW GAMES PAUSED' : 'accepting new games'}</span></h2>
@@ -121,6 +134,6 @@ function pollsCard(ps) {
 <div class="grid"><div><div class="big" id="pollActive">${ps.active}</div><div class="lbl">active (max ${ps.max})</div></div><div><div class="big" id="pollVoters">${ps.voters}</div><div class="lbl">voters in active polls</div></div>
 <div><div class="big">${ps.created}</div><div class="lbl">polls created</div></div><div><div class="big">${ps.locked}</div><div class="lbl">locked</div></div></div>
 <table id="pollTable"><tr><th>Code</th><th>By</th><th>Created</th><th class="n">Times×places</th><th class="n">Voters</th><th>Status</th><th>Expires</th></tr>${rows}</table>
-<p class="lbl">Recent polls (newest first). Polls expire 14 days after their latest time option and are lost when the free-plan disk resets. Times in UTC.</p></div>`;
+<p class="lbl">Recent polls (newest first). Polls expire 14 days after their latest time option (kept in Supabase when configured, otherwise in STATS_FILE). Times in UTC.</p></div>`;
 }
 module.exports = { mount };

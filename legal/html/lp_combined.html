@@ -142,7 +142,7 @@ California, United States</p></div>
 <h2>The short version (plain English)</h2>
 <p>This summary is here to make the policy easier to read. It is not a substitute for it. The full policy below is what counts.</p>
 <ul>
-<li><strong>No accounts, no database, no tracking cookies.</strong> We run the game in server memory. When a round, lobby, or server ends, that game data is gone.</li>
+<li><strong>No accounts, no tracking cookies.</strong> We run the game in server memory. When a round, lobby, or server ends, that game data is gone. A small database, hosted by our provider Supabase, keeps only saved social media handles, next-game polls, and anonymous usage counts.</li>
 <li><strong>Your location is the core of the game.</strong> During a game your phone sends your GPS location to our server. Hunters see hiders' locations at each "ping," about every 60 seconds by default. Your location trail is kept in memory for the round so we can show the end-of-round recap. Then it is discarded.</li>
 <li><strong>Other players see what you share:</strong> your display name, your social media handle (e.g., Instagram, TikTok, X) if you add one, your role, your in-game status, and some of your location.</li>
 <li><strong>The camera snapshot is opt-in.</strong> If you consent in the lobby, hunters see one photo from your rear camera at minute 10. It is kept in memory for that round only.</li>
@@ -217,13 +217,13 @@ California, United States</p></div>
 <td><strong>Referral visits</strong></td>
 <td>When someone opens a link with <code>?ref=&lt;handle&gt;</code></td>
 <td>Us</td>
-<td>The count is kept in server memory; each visit is also written to our server logs (handle and page). See section 6</td>
+<td>The count per handle is kept with our anonymous usage statistics in our database (hosted by Supabase); each visit is also written to our server logs (handle and page). See section 6</td>
 </tr>
 <tr>
 <td><strong>Next-game poll votes</strong> (optional)</td>
 <td>You vote on a "Plan the next game" poll</td>
 <td>Anyone with the poll link</td>
-<td>Only the name and optional social media handle you type, plus your time/place picks; deleted 14 days after the poll's last time option (or sooner if the server restarts)</td>
+<td>Only the name and optional social media handle you type, plus your time/place picks; stored in our database (hosted by Supabase) and deleted 14 days after the poll's last time option</td>
 </tr>
 <tr>
 <td><strong>Technical data</strong></td>
@@ -259,6 +259,7 @@ California, United States</p></div>
 <li><strong>Other players in your lobby,</strong> as described above. They may take screenshots, or download or share recap images and highlight reels. <strong>Once they do, that copy is outside our control.</strong> Play only with people you trust with this information.</li>
 <li><strong>Service providers.</strong> These process data on our behalf so the Game can run:</li>
 <li><strong>Render</strong> (render.com) hosts our server in the United States. It processes the traffic and server logs (see section 6).</li>
+<li><strong>Supabase</strong> (supabase.com) hosts our database, in [SUPABASE REGION, e.g. US East (N. Virginia); confirm]. It stores only the items listed in section 7 as kept in our database: saved social media handles, next-game polls and votes, anonymous usage statistics (including referral counts), and our game settings. It acts only as our hosting provider.</li>
 <li><strong>OpenStreetMap</strong> map tiles are loaded directly by your browser from OpenStreetMap servers. Those servers receive your IP address and the map area being viewed, as with any website request. See the OpenStreetMap Foundation's privacy policy.</li>
 <li><strong>Social media platforms (e.g., Instagram, TikTok, X):</strong> if you tap a player's handle or "Follow," you leave the Game and go to that platform, where its own privacy policy applies.</li>
 <li><strong>Legal reasons:</strong> we may disclose information if the law requires it, or to protect someone's safety. Because we keep almost nothing, we usually have nothing to disclose.</li>
@@ -268,7 +269,7 @@ California, United States</p></div>
 <h2>6. Server logs and technical data</h2>
 <p>Like most websites, our server and our hosting provider automatically handle technical data, such as your IP address, browser type, the pages you request, and timestamps. Our application writes a small amount of information to the server console, for example referral visits (the referring handle and page) and server events. Our host may keep these logs for a limited period under its own retention settings, [RENDER LOG RETENTION, e.g. 7 days on the free plan; confirm]. We use logs only to operate and debug the Game and prevent abuse.</p>
 <h2>7. How long we keep information</h2>
-<p>The Game has <strong>no database</strong>. All game data, including names, handles, locations, trails, photos, and highlights, lives only in server memory. It is deleted:</p>
+<p>Our database (hosted by Supabase, see section 5) holds only: saved social media handles, next-game polls and votes, anonymous usage statistics (daily counts, hashed random device ids, referral counts, share counts), and our game settings. All other game data, including names, locations, trails, photos, and highlights, lives only in server memory and is never written to the database. It is deleted:</p>
 <ul>
 <li><strong>at "Play again"</strong> (trails, catches, photos, recaps, and highlights from the previous round are wiped);</li>
 <li><strong>when you leave the lobby</strong> (your player entry is removed);</li>
@@ -276,7 +277,7 @@ California, United States</p></div>
 <li><strong>when the server restarts or sleeps</strong>, which on our free hosting can happen after a period of inactivity; and</li>
 <li><strong>for highlight cuts, after 30 minutes at most.</strong></li>
 </ul>
-<p>Referral visit counts are kept in memory until the server restarts. Server logs are kept as described in section 6.</p>
+<p>Anonymous usage statistics, including referral visit counts, are kept in our database to understand how the Game grows. When we delete a handle on request, it is deleted from the database. Server logs are kept as described in section 6.</p>
 <h2>8. Your choices</h2>
 <ul>
 <li>Use any display name you like (within our conduct rules), and leave the "Your @" field blank if you prefer.</li>
@@ -319,9 +320,9 @@ California, United States</p></div>
 </ul>
 <p><strong>Before</strong> we launch any of these features, we will update this Privacy Policy to describe exactly what is collected and by whom, and to explain your choices. If we ever "sell" or "share" personal information as California defines those terms, we will add a <strong>"Do Not Sell or Share My Personal Information"</strong> link, along with any consent prompts the law requires.</p>
 <h2>12. Security</h2>
-<p>We limit what we collect and keep it only in memory, and that is our main protection. The Game is served over HTTPS. Hiders' coordinates are sent to hunters only at ping time. However, no system is perfectly secure. Anyone with a lobby code or link can join that lobby, so share codes only with people you intend to play with.</p>
+<p>We limit what we collect and keep most of it only in memory, and that is our main protection. The few items in our database are reachable only by our server with a secret key; the database blocks all public access. The Game is served over HTTPS. Hiders' coordinates are sent to hunters only at ping time. However, no system is perfectly secure. Anyone with a lobby code or link can join that lobby, so share codes only with people you intend to play with.</p>
 <h2>13. International users</h2>
-<p>The Game is operated from, and hosted in, the United States. If you use it from elsewhere, your information will be processed in the United States.</p>
+<p>The Game is operated from, and hosted in, the United States (our server at Render; our database at Supabase, in [SUPABASE REGION; confirm]). If you use it from elsewhere, your information will be processed in the United States.</p>
 <h2>14. Changes to this policy</h2>
 <p>We may update this policy. When we do, we will change the "Last updated" date. If a change is material, especially one that adds new kinds of data collection, we will give notice in the Game before the change applies.</p>
 <h2>15. Contact</h2>

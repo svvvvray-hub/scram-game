@@ -10,6 +10,11 @@ services:
     envVars:
       - key: ADMIN_KEY
         sync: false
+      # Supabase storage (stats, brake settings, players' socials, polls). Server-only secrets: set them in the Render dashboard.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
       - key: MAX_GAMES
         value: "50"
       - key: CREATOR_HANDLE
