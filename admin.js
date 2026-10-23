@@ -12,11 +12,18 @@ const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').
 function mount(app, { env, stats, liveCounts, polls = null }) {
   const key = () => env.ADMIN_KEY || '';
   const token = () => crypto.createHmac('sha256', key()).update('lastping-admin-v1').digest('hex');
+  // brute-force guard: 10 wrong keys per IP in 15 min -> locked out (even the right key) until the window passes
+  const fails = new Map(), FAIL_MAX = 10, FAIL_WIN = 15 * 60 * 1000;
+  const ipOf = req => String(req.ip || req.socket?.remoteAddress || '');
+  const recent = ip => { const t = Date.now(), a = (fails.get(ip) || []).filter(x => x > t - FAIL_WIN); if (a.length) fails.set(ip, a); else fails.delete(ip); return a; };
   const authed = req => { const k = key(); if (!k) return false;
-    const q = req.query.key ?? req.body?.key; if (typeof q === 'string' && safeEq(q, k)) return true;
+    const q = req.query.key ?? req.body?.key;
+    if (typeof q === 'string') { const ip = ipOf(req), a = recent(ip); if (a.length >= FAIL_MAX) return false;
+      if (safeEq(q, k)) return true; if (fails.size > 10000) fails.clear(); a.push(Date.now()); fails.set(ip, a); return false; }
     const c = cookies(req)[COOKIE]; return typeof c === 'string' && safeEq(c, token()); };
   const setCookie = (req, res) => res.cookie(COOKIE, token(), { httpOnly: true, sameSite: 'strict', secure: req.secure, path: '/admin', maxAge: 30 * 864e5 });
-  const gate = (req, res, next) => { if (!key()) return res.status(404).type('text').send('Not found'); res.set('Cache-Control', 'no-store'); res.set('X-Robots-Tag', 'noindex'); next(); };
+  const gate = (req, res, next) => { if (!key()) return res.status(404).type('text').send('Not found'); res.set('Cache-Control', 'no-store'); res.set('X-Robots-Tag', 'noindex');
+    res.set('X-Frame-Options', 'DENY'); res.set('Content-Security-Policy', "frame-ancestors 'none'"); res.set('X-Content-Type-Options', 'nosniff'); next(); }; // no clickjacking of the brake switch
   const form = express.urlencoded({ extended: false, limit: '4kb' }), json = express.json({ limit: '4kb' });
 
   app.get('/admin', gate, (req, res) => {

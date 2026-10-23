@@ -56,7 +56,11 @@ function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames
   }
   if (persist) persist.attach({ data: () => d, adopt });
   const today = () => { const k = day(now()); return d.days[k] ||= { games: 0, started: 0, players: [], newPlayers: 0 }; };
-  const refRow = r => d.refs[r] ||= { players: 0, games: 0, visits: 0 };
+  // caps (bug audit): random ?ref= values / share kinds must not grow the stored blob forever
+  const MAX_REFS = 2000, MAX_SHARE_KINDS = 30;
+  // own-property lookups only: ?ref=__proto__ used to reach Object.prototype (prototype pollution)
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k), BAD_KEY = /^(__proto__|constructor|prototype)$/;
+  const refRow = r => own(d.refs, r) ? d.refs[r] : (!BAD_KEY.test(r) && Object.keys(d.refs).length < MAX_REFS) ? (d.refs[r] = { players: 0, games: 0, visits: 0 }) : { players: 0, games: 0, visits: 0 };
   function player(dev, ref) { // returns hashed id; counts unique/day and first-seen referrer
     if (!dev || typeof dev !== 'string') return null;
     const h = hashId(dev.slice(0, 64)), D = today();
@@ -88,7 +92,7 @@ function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames
     gameStarted() { d.totals.started++; today().started++; touch(); },
     visit(ref) { refRow(ref).visits++; touch(); },
     playClick() { d.playClicks++; touch(); },
-    share(kind) { if (!/^[a-z]{2,16}$/.test(kind)) return false; d.shares[kind] = (d.shares[kind] || 0) + 1; touch(); return true; },
+    share(kind) { if (!/^[a-z]{2,16}$/.test(kind) || BAD_KEY.test(kind) || (!own(d.shares, kind) && Object.keys(d.shares).length >= MAX_SHARE_KINDS)) return false; d.shares[kind] = (own(d.shares, kind) ? d.shares[kind] : 0) + 1; touch(); return true; },
     // brake: returns null if a new game may be created, else a reason
     canCreate(live) { const s = d.settings, t = now(); d.recentCreates = d.recentCreates.filter(x => x > t - 3600e3);
       const why = s.paused ? 'paused' : (s.maxGames > 0 && live >= s.maxGames) ? 'max' : (s.maxPerHour > 0 && d.recentCreates.length >= s.maxPerHour) ? 'hourly' : null;

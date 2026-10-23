@@ -26,3 +26,13 @@ test('gps throttle: moving or enemy/drop nearby or urgent -> every 3-5 s', () =>
   d = G.decide({ now: 4000, loc: P0, last, urgent: true }); assert.equal(d.send, true, 'compass phase / pickup is urgent');
   d = G.decide({ now: 3500, loc: P0, last, urgent: true }); assert.equal(d.send, false);
 });
+test('gps accept: rejects NaN, (0,0), out-of-order and a coarse jump right after a good fix', () => {
+  const good = { lat: 37.77, lng: -122.42, acc: 10, ts: 1000 };
+  assert.equal(G.accept(null, good, 1000), true);
+  assert.equal(G.accept(good, { lat: NaN, lng: 1, acc: 5, ts: 2000 }, 2000), false);
+  assert.equal(G.accept(good, { lat: 0, lng: 0, acc: 5, ts: 2000 }, 2000), false);
+  assert.equal(G.accept(good, { lat: 37.771, lng: -122.42, acc: 8, ts: 900 }, 2000), false, 'older than the current fix');
+  assert.equal(G.accept(good, { lat: 37.79, lng: -122.42, acc: 1500, ts: 5000 }, 5000), false, 'cell-tower fix 4 s after a 10 m fix');
+  assert.equal(G.accept(good, { lat: 37.79, lng: -122.42, acc: 1500, ts: 40000 }, 40000), true, 'after 30 s the coarse fix is better than nothing');
+  assert.equal(G.accept(good, { lat: 37.7701, lng: -122.42, acc: 30, ts: 2000 }, 2000), true);
+});

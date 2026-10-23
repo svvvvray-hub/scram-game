@@ -395,3 +395,9 @@ Tests: `test/supabase.test.js` runs against an in-process mock PostgREST (`test/
 - Files: `polls.js` (server logic + .ics), `public/plan.js` (create sheet, poll view, card), `public/plan.html` (`/p/CODE`).
 - Tests: `test/plan.test.js` (validation, limits, best combo, lock auth, .ics, expiry, persistence, XSS escaping, WS live updates, lobby message) is part of `npm test`. E2E: `ADMIN_KEY=e2e-admin-key STATS_FILE=/tmp/lp_e2e14.json PORT=3014 node server.js` then `node test/e2e_v14.js` (host creates from the recap, 3 voters in separate contexts incl. a London time zone, live update, long-press/second-tap maybe, best-combo glow, lock, .ics/Google/map links, 9:16 card with QR, XSS, admin, referral).
 - Screenshots: `shots/v14_plan_create.png`, `shots/v14_plan_vote.png`, `shots/v14_plan_locked.png`, `shots/v14_next_card.png`.
+
+## v15.1: bug audit fixes
+
+Full audit table (115 common location-game / realtime / mobile-web bugs, with status and evidence): [`docs/bug_audit.md`](docs/bug_audit.md).
+- New optional env: `CREATE_PER_IP` (default 20) and `JOIN_PER_IP` (default 120) per IP per 10 min; `HL_TOTAL_MB` (default 120) for all reel uploads together. Direct loopback connections (local dev, tests) are not rate limited.
+- Tests: `test/audit.test.js` (part of `npm test`) and the `accept()` cases in `test/gps.test.js`.

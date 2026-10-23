@@ -12,7 +12,7 @@ window.trackShare = k => { try { navigator.sendBeacon?.('/api/share', new Blob([
 const COLORS = ['#3b82f6', '#a855f7', '#14b8a6', '#eab308', '#ec4899', '#22c55e', '#f43f5e', '#06b6d4'];
 let ws, S = null, sess = JSON.parse(localStorage.getItem('scram') || 'null'), offset = 0, watchId = null, myLoc = null;
 let dismissedRound = -1, viewingEnd = false, lastRound = -1, endLayer = null, lastMsgAt = Date.now(), syncSentAt = 0;
-let nearestId = null, map, endMap, layers = {}, wakeLock = null, retry = 0, pendingAction = null, lastPingN = 0;
+let nearestId = null, map, endMap, layers = {}, wakeLock = null, retry = 0, pendingAction = null, lastPingN = 0, replacedTab = false;
 const fmt = ms => { ms = Math.max(0, ms); const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const ago = ts => { const s = Math.round((Date.now() - ts) / 1000); return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`; };
 const tnow = () => Date.now() + offset;
@@ -42,10 +42,20 @@ function connect() {
     else if (sess && S && S.code === sess.code) ws.send(JSON.stringify({ type: 'rejoin', code: sess.code, token: sess.token }));
     else if (sess) ws.send(JSON.stringify({ type: 'peek', code: sess.code, token: sess.token })); // different invite opened: offer a Rejoin button
   };
-  ws.onmessage = e => { lastMsgAt = Date.now(); syncSentAt = 0; handle(JSON.parse(e.data)); };
-  ws.onclose = () => { if (sock !== ws) return; setTimeout(connect, Math.min(5000, 500 * 2 ** retry++)); if (S) toast('Reconnecting…'); };
+  ws.onmessage = e => { lastMsgAt = Date.now(); syncSentAt = 0; const m = JSON.parse(e.data); if (m.type === 'replaced') { if (sock === ws) { replacedTab = true; ownerSeenAt = Date.now(); } return; } handle(m); };
+  ws.onclose = () => { if (sock !== ws) return;
+    if (replacedTab) { toast('📱 This game is open in another tab or window. Come back here to play on this one.', 6000); return; } // no reconnect ping-pong between tabs
+    setTimeout(connect, Math.min(5000, 500 * 2 ** Math.min(retry++, 10)) * (0.5 + Math.random())); if (S) toast('Reconnecting…'); }; // jitter: a server restart doesn't get every phone at once
 }
 const sendMsg = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+// Same game open in two tabs: the newest tab owns the session (server sends 'replaced' to the old one). The owner announces
+// itself on a BroadcastChannel; a replaced tab takes over again when it becomes visible, or once the owner is gone (no tab fight).
+const tabCh = 'BroadcastChannel' in window ? new BroadcastChannel('scram-tab') : null; let ownerSeenAt = 0;
+if (tabCh) tabCh.onmessage = e => { if (sess && e.data && e.data.code === sess.code && e.data.id === sess.id) ownerSeenAt = Date.now(); };
+setInterval(() => {
+  if (!replacedTab && sess && S && ws?.readyState === 1) tabCh?.postMessage({ code: sess.code, id: sess.id });
+  else if (replacedTab && tabCh && Date.now() - ownerSeenAt > 6000) { replacedTab = false; retry = 0; connect(); } // the other tab closed
+}, 2000);
 
 // ---------- plan the next game (poll; see plan.js) ----------
 let planCode = null, planBy = '', areaRound = -1;
@@ -155,8 +165,9 @@ function startGps() {
   if (!('geolocation' in navigator)) { sendMsg({ type: 'perm', perm: 'unsupported' }); return setGps('❌ This browser has no GPS support'); }
   if (!window.isSecureContext) setGps('❌ Location needs HTTPS');
   watchId = navigator.geolocation.watchPosition(pos => {
-    myLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: pos.timestamp || Date.now() };
-    maybeSend();
+    const l = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: pos.timestamp || Date.now() };
+    if (!GpsThrottle.accept(myLoc, l, Date.now())) return; // NaN / (0,0) / out-of-order / coarse fix right after a good one
+    myLoc = l; maybeSend();
   }, err => {
     const perm = err.code === 1 ? 'denied' : 'error';
     sendMsg({ type: 'perm', perm });
@@ -178,7 +189,7 @@ function maybeSend(force = false) {
 }
 function freshFix() { // server asks ~5 s before a ping: upload a fresh, high-accuracy fix right away
   maybeSend(true);
-  navigator.geolocation?.getCurrentPosition(pos => { myLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: pos.timestamp || Date.now() }; maybeSend(true); }, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 4500 });
+  navigator.geolocation?.getCurrentPosition(pos => { const l = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: pos.timestamp || Date.now() }; if (!GpsThrottle.accept(myLoc, l, Date.now())) return; myLoc = l; maybeSend(true); }, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 4500 });
 }
 setInterval(() => maybeSend(), 1000);
 function setGps(t) { $('gpsStatus').textContent = t; $('btnGps').classList.toggle('hidden', t.startsWith('✅')); }
@@ -199,7 +210,11 @@ function releaseWake() { const l = wakeLock; wakeLock = null; if (l) l.release()
 window.Wake = { sync: wake, release: releaseWake, get held() { return !!wakeLock; }, get supported() { return 'wakeLock' in navigator; } };
 window.addEventListener('pageshow', e => { if (e.persisted && ws?.readyState !== 1) { try { ws.close(); } catch {} } });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { wake(); if (ws?.readyState !== 1) { try { ws.close(); } catch {} } else sendMsg({ type: 'sync' }); maybeSend(true); if (S) render(); }
+  if (document.visibilityState === 'visible') { wake(); resumeAudio();
+    if (replacedTab) { replacedTab = false; retry = 0; if (ws?.readyState === 1 || ws?.readyState === 0) try { ws.close(); } catch {} else connect(); } // back to this tab: take the game over again
+    else if (ws?.readyState !== 1) { try { ws.close(); } catch {} } else { sendMsg({ type: 'sync' }); timeSync(); } // the clock may have jumped while asleep
+    if (sess && watchId === null) startGps(); // iOS can end the watch (error) while suspended: restart it on return
+    maybeSend(true); if (S) render(); }
 });
 
 // ---------- home ----------
@@ -222,6 +237,9 @@ function playChime(opts = {}) {
   }
 }
 document.addEventListener('pointerdown', unlockAudio, { once: true });
+// iOS Safari leaves the context "suspended"/"interrupted" after a call, lock screen or app switch: resume on return + on any tap
+function resumeAudio() { try { if (actx && actx.state !== 'running' && actx.state !== 'closed') actx.resume().catch(() => {}); } catch {} }
+document.addEventListener('pointerdown', resumeAudio);
 const fx = t => { $('hiderFx').textContent = t; };
 
 // ---------- camera (one rear-camera frame at minute 10) ----------
@@ -575,7 +593,8 @@ function warnings() {
   else if (Date.now() - myLoc.ts > 45000) w.push(`Your GPS is stale (${ago(myLoc.ts)}). Keep the screen on and this tab open.`);
   else if (myLoc.acc > 100) w.push(`GPS accuracy is poor (±${Math.round(myLoc.acc)} m).`);
   if (m.role === 'hunter') S.players.filter(p => p.role === 'hider' && !p.caught && p.stale).forEach(p => w.push(`${p.name}'s GPS is stale/offline — their next ping may be old.`));
-  if (ws?.readyState !== 1) w.push('Disconnected — reconnecting…');
+  if (replacedTab) w.push('This game is open in another tab — come back here to play on this one.');
+  else if (ws?.readyState !== 1) w.push('Disconnected — reconnecting…');
   if (!('wakeLock' in navigator)) w.push('🔆 Screen wake lock not supported here — keep the screen on manually.');
   $('warn').innerHTML = w.map(esc).join('<br>'); $('warn').classList.toggle('hidden', !w.length);
 }
@@ -749,6 +768,7 @@ function timeSync() { // a few NTP-style round trips over the WS; offset = best 
   const go = () => { if (n++ >= 6 || !ws || ws.readyState !== 1) { tsBusy = false; return; } sendMsg({ type: 'time', c: performance.timeOrigin + performance.now() }); setTimeout(go, 80); };
   go();
 }
+setInterval(() => { if (S && (S.state === 'playing' || S.state === 'hiding')) timeSync(); }, 5 * 60 * 1000); // re-sync during long rounds (clock drift)
 function onTime(m) {
   tsSamples.push(TimeSync.sampleOf(m.c, m.s, performance.timeOrigin + performance.now()));
   const b = TimeSync.bestOffset(tsSamples); // performance clock ~ Date.now(), but monotonic within the page

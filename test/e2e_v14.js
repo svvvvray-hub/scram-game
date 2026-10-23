@@ -42,7 +42,7 @@ const LAT = 37.7596, LNG = -122.4269;
   const chips = await H.$$eval('#pChips .chip', bs => bs.map(b => b.textContent));
   check(chips.length === 8 && chips.some(c => /^Sat 4pm/.test(c)) && chips.some(c => /^Sun 2pm/.test(c)), 'quick chips for this Sat/Sun: ' + chips.join(' | '));
   await H.click('#pChips .chip:has-text("Sat 4pm")'); await H.click('#pChips .chip:has-text("Sun 2pm")');
-  const cust = await H.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7 || 7)); d.setHours(19, 30, 0, 0); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T19:30`; });
+  const cust = await H.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7)); /* the Friday before this weekend's chips (was: next week's Friday on Fridays, which broke the sort order) */ d.setHours(19, 30, 0, 0); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T19:30`; });
   await H.fill('#pCustom', cust); await H.click('#pAddTime');
   check((await H.$$('#pTimes .pick')).length === 3 && /7:30pm PDT/.test(await H.textContent('#pTimes')), 'custom date-time added, shown with zone label: ' + (await H.textContent('#pTimes')).slice(0, 120));
   const sug = await H.$$eval('#pSuggest .chip', bs => bs.map(b => b.textContent));

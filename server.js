@@ -12,7 +12,7 @@ const PU = require('./powerups');
 const { createStats, normHandle } = require('./stats');
 const { createSupabaseStore } = require('./supabase');
 const Admin = require('./admin');
-const { createPolls, ics: pollIcs, CODE_RE: POLL_RE } = require('./polls');
+const { createPolls, ics: pollIcs, CODE_RE: POLL_RE, clean: cleanText } = require('./polls');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
 const MAX_GAME_MS = 6 * 3600 * 1000;
@@ -22,6 +22,10 @@ const STALE_MS = 45 * 1000;
 const CHIME_THROTTLE = 1500;
 const HL_TTL = 30 * 60 * 1000;           // uploaded highlight cuts live 30 min max (memory only)
 const HL_MAX = 15 * 1024 * 1024, HL_CUT_MAX = 3 * 1024 * 1024;
+const PRE_JOIN_MAX = 64 * 1024;          // bug audit: any message before create/join is tiny; reject big ones before parsing
+const JOINED_MAX = 1024 * 1024;          // in-game messages (cam photo <= 600 kB); only highlight uploads after the game may be bigger
+const MSG_BURST = 60, MSG_RATE = 30;     // per-socket token bucket: 60 burst, 30 msg/s sustained (excess dropped, floods closed)
+const LOOPBACK = /^(::1|127\.|::ffff:127\.)/;
 
 const rid = (n = 16) => crypto.randomBytes(n).toString('hex');
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -60,7 +64,23 @@ function offsetM(p, dist, brg) {
   return { lat: deg(la2), lng: ((deg(lo2) + 540) % 360) - 180 };
 }
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+// client IP for per-IP limits: Cloudflare's header, else the leftmost X-Forwarded-For (Render's proxy), else the socket.
+// `local` = a direct loopback connection with no proxy headers (local dev / tests): not rate limited.
+function clientIp(req) {
+  const h = req.headers || {}, fwd = String(h['cf-connecting-ip'] || String(h['x-forwarded-for'] || '').split(',')[0]).trim(), sock = req.socket?.remoteAddress || '';
+  return { ip: fwd || sock, local: !fwd && LOOPBACK.test(sock) };
+}
+// sliding-window counter: true when `key` already had `max` hits in the last `winMs`
+function makeLimiter() {
+  const hits = new Map();
+  const hit = (key, max, winMs, t = Date.now()) => { let a = hits.get(key); if (!a) { if (hits.size > 20000) hits.clear(); hits.set(key, a = []); }
+    while (a.length && a[0] <= t - winMs) a.shift(); if (a.length >= max) return true; a.push(t); return false; };
+  const sweep = (winMs, t = Date.now()) => { for (const [k, a] of hits) if (!a.length || a[a.length - 1] <= t - winMs) hits.delete(k); };
+  return { hit, sweep, size: () => hits.size };
+}
 const band = m => m < 25 ? 'scorching' : m < 75 ? 'hot' : m < 150 ? 'warm' : m < 300 ? 'cool' : 'cold';
+// player names: strip control / bidi-override / zero-width characters (display spoofing), collapse spaces, max 20
+const cleanName = n => cleanText(String(n ?? ''), 20) || 'Player';
 const clampNum = (v, lo, hi, d) => { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
 
 function createApp(opts = {}) {
@@ -75,6 +95,11 @@ function createApp(opts = {}) {
   const refs = new Map(), env = opts.env || process.env;
   const DEFAULT_MODE = MODES[opts.defaultMode ?? env.SCRAM_DEFAULT_MODE] ? (opts.defaultMode ?? env.SCRAM_DEFAULT_MODE) : 'classic'; // test hook: legacy suites use 'custom' (everything on)
   const MAX_PLAYERS = Math.round(clampNum0(opts.maxPlayers ?? env.MAX_PLAYERS, 2, 500, 20)); // per lobby
+  // bug audit: per-IP limits on create / join (10-min window; generous because a whole group can share one carrier NAT IP)
+  const CREATE_PER_IP = Math.round(clampNum0(opts.createPerIp ?? env.CREATE_PER_IP, 1, 100000, 20)), JOIN_PER_IP = Math.round(clampNum0(opts.joinPerIp ?? env.JOIN_PER_IP, 1, 100000, 120));
+  const HOST_HANDOFF_MS = opts.hostHandoffMs ?? 90 * 1000; // a host offline this long hands the crown to a connected player
+  const HL_TOTAL_MAX = clampNum0(opts.hlTotalMb ?? env.HL_TOTAL_MB, 1, 4096, 120) * 1024 * 1024; // all lobbies' highlight cuts together (512 MB box)
+  const ipLimit = makeLimiter();
   // Persistence: Supabase (SUPABASE_URL + SUPABASE_SERVICE_KEY, server-only) when set, else the STATS_FILE JSON (local runs / tests)
   const persist = opts.stats ? null : opts.persist !== undefined ? opts.persist : (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY)
     ? createSupabaseStore({ url: env.SUPABASE_URL, key: env.SUPABASE_SERVICE_KEY, now, throttleMs: opts.statsThrottleMs ?? 5000, log: opts.quiet ? { error() {}, log() {} } : console, ...(opts.supabase || {}) }) : null;
@@ -83,7 +108,7 @@ function createApp(opts = {}) {
   const ready = stats.ready || (stats.ready = stats.persist ? stats.persist.start({ waitMs: opts.storageWaitMs ?? 10000 }) : Promise.resolve(true));
   const liveCounts = () => { let games = 0, playing = 0, players = 0, online = 0; for (const L of lobbies.values()) { if (L.state === 'ended') continue; games++; if (L.state === 'playing' || L.state === 'hiding') playing++;
     for (const p of L.players.values()) { players++; if (p.ws) online++; } } return { games, playing, players, online }; };
-  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = normHandle(String(req.query.ref || '')); if (h) { refs.set(h, (refs.get(h) || 0) + 1); stats.visit(h); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
+  app.use((req, res, next) => { if (req.method === 'GET' && req.query.ref) { const h = normHandle(String(req.query.ref || '')); if (h && (refs.has(h) || refs.size < 2000)) { refs.set(h, (refs.get(h) || 0) + 1); stats.visit(h); if (!opts.quiet) console.log(`[ref] ${h} visits=${refs.get(h)} ${req.path}`); } } next(); });
   const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
     return /^https?:/i.test(base) ? u.toString() : u.pathname + u.search; };
   app.get('/play', (req, res) => { stats.playClick(); res.redirect(302, playTarget({ ref: normHandle(String(req.query.ref || '')) })); });
@@ -127,7 +152,8 @@ function createApp(opts = {}) {
   app.get('/healthz', (req, res) => res.json({ ok: true, lobbies: lobbies.size }));
   app.get('/j/:code', (req, res) => res.redirect('/?code=' + encodeURIComponent(req.params.code.toUpperCase())));
   app.get('/qr/:code.svg', async (req, res) => {
-    const url = `${req.protocol}://${req.get('host')}/p/${encodeURIComponent(req.params.code.toUpperCase())}`;
+    const code = String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); if (!code) return res.status(404).end();
+    const url = `${req.protocol}://${req.get('host')}/p/${code}`;
     res.type('image/svg+xml').send(await QRCode.toString(url, { type: 'svg', margin: 1 }));
   });
 
@@ -156,7 +182,7 @@ function createApp(opts = {}) {
   // {social:{handle,platform}} or legacy {ig, platform?} -> normalized social or null
   const socialIn = m => Socials.norm(m.social && typeof m.social === 'object' ? m.social : { handle: m.ig, platform: m.platform });
   function addPlayer(L, name, social) {
-    const p = { id: rid(6), token: rid(16), name: String(name || 'Player').trim().slice(0, 20) || 'Player',
+    const p = { id: rid(6), token: rid(16), name: cleanName(name),
       role: 'hider', caught: false, caughtAt: 0, ws: null, loc: null, perm: 'unknown', connected: false, revealedAt: 0,
       cam: 'unknown', decoys: 2, decoyArmed: false, wipeNext: false, outSince: 0, oobReveal: false, held: null, lastUse: 0, pickup: null, silent: false, shieldUntil: 0, radarUntil: 0, houndUntil: 0, used: 0, social: social || null };
     if (!L.hostId) L.hostId = p.id; // no lobby roles: dealt at start (random by default)
@@ -165,6 +191,8 @@ function createApp(opts = {}) {
   }
 
   const isHunter = p => p.role === 'hunter';
+  // a new host must not inherit the old host's secret manual hunter pick (it would reveal roles before revealAt)
+  function setHost(L, p) { if (L.hostId === p.id) return; L.hostId = p.id; if (L.state === 'lobby') { L.pick.manual = false; L.pick.ids = new Set(); } }
   const activeHiders = L => [...L.players.values()].filter(p => p.role === 'hider' && !p.caught);
 
   // ---- The privacy core: build a view for ONE player. Hider coordinates are only ever
@@ -398,6 +426,9 @@ function createApp(opts = {}) {
         continue;
       }
       if (running && !L.revealSent && t >= L.revealAt) { L.revealSent = true; broadcast(L); } // the reveal: first state that carries roles
+      { const hp = L.players.get(L.hostId); // host offline too long: hand over to a connected player (they can start / end / confirm catches)
+        if (hp && !hp.connected && hp.discAt && t - hp.discAt > HOST_HANDOFF_MS) { const next = [...L.players.values()].find(x => x.connected);
+          if (next) { setHost(L, next); event(L, `👑 ${next.name} is now host (${hp.name} is offline)`); broadcast(L); } } }
       if (L.state === 'hiding' && t >= L.hideEndsAt) { L.state = 'playing'; L.nextPingAt = t + L.settings.pingSec * 1000; event(L, 'Hunt is on!'); logEv(L, 'hunt', {}, '🔦 Hunt is on'); broadcast(L); }
       if (running) checkBounds(L);
       for (const [pid, c] of L.catches) if (t >= c.expiresAt) { L.catches.delete(pid); const h = L.players.get(c.hiderId); event(L, `⌛ Catch claim for ${h ? h.name : '?'} expired`); broadcast(L); }
@@ -605,7 +636,7 @@ function createApp(opts = {}) {
     if (L.players.size === 0) { lobbies.delete(L.code); return; }
     if (L.hostId === p.id) {
       const next = [...L.players.values()].find(x => x.connected) || L.players.values().next().value;
-      L.hostId = next.id; event(L, `${p.name} left — ${next.name} is now host`);
+      setHost(L, next); event(L, `${p.name} left — ${next.name} is now host`);
     } else event(L, `${p.name} left`);
     if (L.state === 'playing' || L.state === 'hiding') {
       const ps = [...L.players.values()];
@@ -615,17 +646,30 @@ function createApp(opts = {}) {
     broadcast(L);
   }
 
-  wss.on('connection', ws => {
+  wss.on('connection', (ws, req) => {
     let L = null, me = null;
+    const who = clientIp(req || {}); let tokens = MSG_BURST, tokAt = Date.now(), dropped = 0;
     ws.on('message', raw => {
+      { const t = Date.now(); tokens = Math.min(MSG_BURST, tokens + (t - tokAt) / 1000 * MSG_RATE); tokAt = t; } // per-socket flood guard
+      if (tokens < 1) { if (++dropped > 300) ws.close(1008, 'Too many messages'); return; } tokens--;
+      const len = raw.length || 0;
+      if (len > PRE_JOIN_MAX && (!me || (len > JOINED_MAX && L.state !== 'ended'))) return ws.close(1009, 'Message too large');
       let m; try { m = JSON.parse(raw); } catch { return; }
+      if (!m || typeof m !== 'object' || Array.isArray(m) || typeof m.type !== 'string') return; // JSON null / numbers / arrays used to crash the server
+      try { onMsg(m); } catch (e) { console.error('[ws] message error', m.type, e && e.message); }
+    });
+    function onMsg(m) {
+      // kicked / lobby deleted / left: this socket is no longer a player, so it may create or join again
+      if (me && (lobbies.get(L.code) !== L || L.players.get(me.id) !== me)) { me = null; L = null; }
       if (m.type === 'time') return send(ws, { type: 'time', c: Number(m.c) || 0, s: now() }); // NTP-style clock sync round trip
       if (m.type === 'pollSub') { const c = String(m.code || '').toUpperCase(); if (!POLL_RE.test(c)) return;
-        if (ws.pollCode) pollSubs.get(ws.pollCode)?.delete(ws); ws.pollCode = c; if (!pollSubs.has(c)) pollSubs.set(c, new Set()); if (pollSubs.get(c).size < 200) pollSubs.get(c).add(ws);
+        if (ws.pollCode) { const o = pollSubs.get(ws.pollCode); o?.delete(ws); if (o && !o.size) pollSubs.delete(ws.pollCode); } ws.pollCode = c; if (!pollSubs.has(c)) pollSubs.set(c, new Set()); if (pollSubs.get(c).size < 200) pollSubs.get(c).add(ws);
         return void polls.ensure(c).catch(() => {}).then(() => { const v = polls.view(c); send(ws, v ? { type: 'poll', poll: v } : { type: 'poll', code: c, gone: true }); }); }
       if (!me) {
         if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
         const dev = typeof m.dev === 'string' ? m.dev : null, ref = normHandle(String(m.ref || '')) || null, social = socialIn(m);
+        if ((m.type === 'create' || m.type === 'join') && !who.local && ipLimit.hit((m.type === 'create' ? 'c:' : 'j:') + who.ip, m.type === 'create' ? CREATE_PER_IP : JOIN_PER_IP, 600e3))
+          return send(ws, { type: 'error', error: 'Too many tries from your network. Wait a few minutes and try again.', rate: true });
         if (m.type === 'create') {
           if (stats.canCreate(liveCounts().games)) return send(ws, { type: 'error', error: BUSY_MSG, busy: true });
           L = newLobby(); me = addPlayer(L, m.name, social); stats.gameCreated(dev, ref); if (me.social) stats.handle(me.social, { ref });
@@ -640,12 +684,12 @@ function createApp(opts = {}) {
           L = lobbies.get(String(m.code || '').toUpperCase());
           me = L && [...L.players.values()].find(p => p.token === m.token);
           if (!me) { L = null; return send(ws, { type: 'error', error: 'Session expired', reset: true }); }
-          if (me.ws && me.ws !== ws) try { me.ws.close(); } catch {}
+          if (me.ws && me.ws !== ws) { send(me.ws, { type: 'replaced' }); try { me.ws.close(4001, 'replaced'); } catch {} } // the old tab stops auto-reconnecting (no tab ping-pong)
         } else if (m.type === 'peek') { // pre-rejoin check: is my saved session still alive? (token-gated, no locations)
           const PL = lobbies.get(String(m.code || '').toUpperCase()), p = PL && [...PL.players.values()].find(x => x.token === m.token);
           return send(ws, p ? { type: 'session', ok: true, code: PL.code, state: PL.state, name: p.name, ...(preReveal(PL) ? {} : { role: p.role, caught: p.caught }) } : { type: 'session', ok: false });
         } else return;
-        me.ws = ws; me.connected = true; me.discAt = 0;
+        me.ws = ws; me.connected = true; me.discAt = 0; if (!running(L)) L.idleSince = now();
         send(ws, { type: 'joined', code: L.code, id: me.id, token: me.token });
         broadcast(L);
         if (L.state === 'ended') send(ws, { type: 'recap', recap: buildRecap(L) });
@@ -654,12 +698,13 @@ function createApp(opts = {}) {
         return;
       }
       const host = me.id === L.hostId;
+      if (!running(L) && m.type !== 'loc' && m.type !== 'sync') L.idleSince = now(); // an active lobby / recap is not idle
       switch (m.type) {
         case 'loc': {
           const lat = Number(m.lat), lng = Number(m.lng);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
-          const first = !me.loc;
-          me.loc = { lat, lng, acc: clampNum(m.acc, 0, 1e5, 999), ts: Number(m.ts) || now(), recvAt: now() };
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return; // (0,0) = "null island" bogus fix
+          const first = !me.loc, ts = Number(m.ts), tn = now();
+          me.loc = { lat, lng, acc: clampNum(m.acc, 0, 1e5, 999), ts: Number.isFinite(ts) && Math.abs(ts - tn) < 864e5 ? ts : tn, recvAt: tn };
           trail(L, me);
           if (L.state === 'playing' && L.drops.size) checkPickups(L);
           // Only hunters' live positions are pushed; hider updates trigger no broadcast with coords.
@@ -673,7 +718,7 @@ function createApp(opts = {}) {
         }
         case 'plan': { const c = String(m.code || '').toUpperCase(); // a poll for the next game, shown on everyone's recap
           if ((host || env.PLAN_ANYONE === '1') && polls.get(c)) { L.plan = { code: c, by: me.name }; for (const p of L.players.values()) send(p.ws, { type: 'plan', ...L.plan }); } break; }
-        case 'ig': case 'social': me.social = socialIn(m); L.recapCache = null; if (me.social) stats.handle(me.social); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
+        case 'ig': case 'social': me.social = socialIn(m); L.recapCache = null; if (me.social && (me.socialN = (me.socialN || 0) + 1) <= 10) stats.handle(me.social); // cap stored handles per player if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
         case 'perm': me.perm = ['granted', 'denied', 'prompt', 'unsupported', 'error'].includes(m.perm) ? m.perm : 'unknown'; broadcast(L); break;
         case 'settings': if (host && L.state === 'lobby') {
           const s = m.settings || {};
@@ -704,7 +749,7 @@ function createApp(opts = {}) {
           if (m.hunters != null) L.pick.hunters = Math.max(1, Math.min(MAX_PLAYERS - 1, Number(m.hunters) || 1));
           L.pick.manual = m.type === 'pick' ? !!m.manual : false; if (!L.pick.manual) L.pick.ids = new Set(); send(ws, viewFor(L, me));
         } break;
-        case 'kick': if (host && L.state === 'lobby' && m.id !== me.id) { const p = L.players.get(m.id); if (p) { send(p.ws, { type: 'gone', kicked: true }); L.players.delete(m.id); L.pick.ids.delete(m.id); broadcast(L); } } break;
+        case 'kick': if (host && L.state === 'lobby' && m.id !== me.id) { const p = L.players.get(m.id); if (p) { send(p.ws, { type: 'gone', kicked: true }); p.ws = null; p.connected = false; L.players.delete(m.id); L.pick.ids.delete(m.id); broadcast(L); } } break;
         case 'start': if (host && L.state === 'lobby') {
           const ps = [...L.players.values()];
           if (L.field && !m.force) {
@@ -757,12 +802,14 @@ function createApp(opts = {}) {
           if (L.state !== 'ended' || !Array.isArray(m.cuts)) return send(ws, { type: 'hlAck', ok: false, error: 'Only after the game' });
           const cuts = []; let tot = 0;
           for (const c of m.cuts.slice(0, 12)) {
-            if (typeof c.data !== 'string' || !/^data:video\/(webm|mp4)[^,]*;base64,[A-Za-z0-9+/=]+$/.test(c.data) || c.data.length > HL_CUT_MAX * 1.37) continue;
+            if (!c || typeof c !== 'object' || typeof c.data !== 'string' || !/^data:video\/(webm|mp4)[^,]*;base64,[A-Za-z0-9+/=]+$/.test(c.data) || c.data.length > HL_CUT_MAX * 1.37) continue;
             const dur = Number(c.dur); if (!(dur > 0 && dur <= 10.5)) continue;
             tot += c.data.length * 0.75; if (tot > HL_MAX) break;
-            cuts.push({ data: c.data, t: Number(c.t) || 0, dur, caption: String(c.caption || '').slice(0, 40) });
+            cuts.push({ data: c.data, t: Number(c.t) || 0, dur, caption: cleanText(String(c.caption || ''), 40) });
           }
-          L.highlights.set(me.id, { name: me.name, role: me.startRole || me.role, cuts, t: now() });
+          { let used = 0; for (const X of lobbies.values()) for (const [id, h] of X.highlights) if (!(X === L && id === me.id)) used += h.bytes || 0;
+            if (used + tot > HL_TOTAL_MAX) return send(ws, { type: 'hlAck', ok: false, error: 'The server is busy with other reels. Try again in a few minutes.' }); }
+          L.highlights.set(me.id, { name: me.name, role: me.startRole || me.role, cuts, t: now(), bytes: Math.min(tot, HL_MAX) });
           send(ws, { type: 'hlAck', ok: true, n: cuts.length }); broadcast(L); break; }
         case 'hlFetch': if (host && L.state === 'ended') send(ws, { type: 'hlAll', players: [...L.highlights.entries()].map(([id, h]) => ({ id, ...h })) }); break;
         case 'end': if (host && L.state !== 'ended' && L.state !== 'lobby') endGame(L, activeHiders(L).length ? 'hiders' : 'hunters'); break;
@@ -770,15 +817,15 @@ function createApp(opts = {}) {
         case 'rematch': rematch(L); send(ws, viewFor(L, me)); break;
         case 'leave': leave(L, me); me = null; L = null; break;
       }
-    });
+    }
     ws.on('close', () => { if (me && L && me.ws === ws) { me.ws = null; me.connected = false; me.discAt = now(); if (lobbies.has(L.code)) broadcast(L); /* slot kept: never removed or marked caught for disconnecting */ } });
   });
 
   // keepalive so tunnels don't drop idle sockets
   wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); ws.on('close', () => { if (ws.pollCode) { const s = pollSubs.get(ws.pollCode); s?.delete(ws); if (s && !s.size) pollSubs.delete(ws.pollCode); } }); });
-  const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
+  const hb = setInterval(() => { ipLimit.sweep(600e3); wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }); }, 20000);
   server.on('close', () => { clearInterval(timer); clearInterval(hb); clearInterval(pollSweep); Promise.resolve(stats.flush()).catch(() => {}); });
-  return { ready, stats, polls, liveCounts, DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
+  return { ready, stats, polls, liveCounts, DISCONNECT_GRACE_MS, HOST_HANDOFF_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
 module.exports = { BUSY_MSG, createApp, distM, bearingDeg, offsetM };
