@@ -11,6 +11,7 @@ const Socials = require('./public/socials');
 const PU = require('./powerups');
 const { createStats, normHandle } = require('./stats');
 const Admin = require('./admin');
+const { createPolls, ics: pollIcs, CODE_RE: POLL_RE } = require('./polls');
 
 const IDLE_TTL_MS = 60 * 60 * 1000;       // lobby deleted after 1 h with no game running (or as soon as it's empty)
 const MAX_GAME_MS = 6 * 3600 * 1000;
@@ -81,12 +82,31 @@ function createApp(opts = {}) {
   const playTarget = (extra = {}) => { const base = env.PLAY_REDIRECT_URL || '/', u = new URL(base, 'http://x'); for (const [k, v] of Object.entries(extra)) if (v) u.searchParams.set(k, v);
     return /^https?:/i.test(base) ? u.toString() : u.pathname + u.search; };
   app.get('/play', (req, res) => { stats.playClick(); res.redirect(302, playTarget({ ref: normHandle(String(req.query.ref || '')) })); });
+  // "Plan the next game" polls: 6-char codes (lobby codes are 5) are served by the app itself at /p/CODE, on any host
+  // (so they also work from the PLAY_REDIRECT_URL domain when it points at this app); 5-char lobby codes keep the redirect.
+  const polls = opts.polls || createPolls({ stats, now });
+  const pollSubs = new Map(); // code -> Set<ws>
+  const pollPush = code => { const v = polls.view(code), subs = pollSubs.get(code); if (!subs) return; for (const w of subs) send(w, v ? { type: 'poll', poll: v } : { type: 'poll', code, gone: true }); };
+  app.get('/p/:code', (req, res, next) => { const c = String(req.params.code).toUpperCase(); if (!POLL_RE.test(c)) return next();
+    res.set('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, 'public', 'plan.html')); });
+  const pj = express.json({ limit: '8kb' });
+  const pollErr = (res, e) => { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[poll]', e); res.status(500).json({ error: 'Server error' }); };
+  const pollUrl = (req, code) => `${req.protocol}://${req.get('host')}/p/${code}`;
+  app.post('/api/polls', pj, (req, res) => { try { const r = polls.create(req.body || {}, { ip: req.ip }); res.status(201).json(r); } catch (e) { pollErr(res, e); } });
+  app.get('/api/polls/:code', (req, res) => { const v = polls.view(req.params.code); if (!v) return res.status(404).json({ error: 'Poll not found or expired' });
+    res.set('Cache-Control', 'no-store').json({ ...v, mine: polls.mine(req.params.code, String(req.query.v || '')), creator: req.query.k ? polls.isCreator(req.params.code, String(req.query.k)) : undefined }); });
+  app.post('/api/polls/:code/vote', pj, (req, res) => { try { const v = polls.vote(req.params.code, req.body || {}); res.json(v); pollPush(v.code); } catch (e) { pollErr(res, e); } });
+  app.post('/api/polls/:code/lock', pj, (req, res) => { try { const v = polls.lock(req.params.code, req.body || {}); res.json(v); pollPush(v.code); } catch (e) { pollErr(res, e); } });
+  app.get('/api/polls/:code/ics', (req, res) => { const p = polls.get(req.params.code); if (!p) return res.status(404).type('text').send('Poll not found or expired');
+    const body = pollIcs(p, { url: pollUrl(req, p.code), now: now() }); if (!body) return res.status(409).type('text').send('Not locked yet');
+    res.set('Content-Disposition', `attachment; filename="last-ping-${p.code}.ics"`).type('text/calendar; charset=utf-8').send(body); });
+  const pollSweep = setInterval(() => polls.sweep(), 3600e3); pollSweep.unref?.();
   app.get('/p/:code', (req, res) => res.redirect(302, playTarget({ code: String(req.params.code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), ref: normHandle(String(req.query.ref || '')) })));
   // creator credit: CREATOR_HANDLE + CREATOR_PLATFORM (legacy CREATOR_IG = an Instagram handle); default @mmmmmray on Instagram
   const CREATOR = Socials.norm({ handle: env.CREATOR_HANDLE || env.CREATOR_IG || 'mmmmmray', platform: env.CREATOR_HANDLE ? (env.CREATOR_PLATFORM || 'instagram').toLowerCase() : 'instagram' })
     || { handle: 'mmmmmray', platform: 'instagram' };
   app.get('/config.js', (req, res) => res.type('application/javascript').set('Cache-Control', 'no-cache').send(`window.CREATOR=${JSON.stringify({ ...CREATOR, url: Socials.url(CREATOR) })};`));
-  Admin.mount(app, { env, stats, liveCounts });
+  Admin.mount(app, { env, stats, liveCounts, polls });
   app.post('/api/share', express.json({ limit: '1kb' }), (req, res) => { stats.share(String(req.body?.k || '')); res.status(204).end(); });
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
   app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
@@ -96,7 +116,7 @@ function createApp(opts = {}) {
   app.get('/api/rules', (req, res) => res.json({ gameMin: DEFAULT_GAME_SEC / 60, pingSec: 60, hideSec: 120, oobGraceSec: 30, catchConfirmSec: 20, catchRadiusM: 30,
     decoys: 2, decoyMinM: 30, decoyMaxM: 150, chimeM: 40, chimeVolDefault: 25, bountyEveryMin: 5, bountyRadiusM: 15, camMin: 10, compassFromMin: 18,
     dropEveryMin: 3, chaosEverySec: 90, noDropsFirstMin: 2, dropTtlMin: 2.5, pickupM: 15, pickupSec: 5, cooldownMin: 3, dropMinM: 50, dropMaxM: 200,
-    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60, maxPlayers: MAX_PLAYERS, defaultMode: 'classic', modes: MODES, tiles: env.DARK_TILES_URL ? { url: env.DARK_TILES_URL, attr: env.DARK_TILES_ATTR || '© OpenStreetMap contributors' } : null, needFixLeadSec: 5, gpsFastSec: 4, gpsSlowSec: 15, gpsStillM: 5, gpsEnemyM: 150 }));
+    hiderWeights: PU.HIDER, hunterWeights: PU.HUNTER, info: PU.INFO, hlMaxMB: HL_MAX / 1048576, hlTtlMin: HL_TTL / 60000, closeCallM: 20, closeCallSec: 60, maxPlayers: MAX_PLAYERS, planAnyone: env.PLAN_ANYONE === '1', defaultMode: 'classic', modes: MODES, tiles: env.DARK_TILES_URL ? { url: env.DARK_TILES_URL, attr: env.DARK_TILES_ATTR || '© OpenStreetMap contributors' } : null, needFixLeadSec: 5, gpsFastSec: 4, gpsSlowSec: 15, gpsStillM: 5, gpsEnemyM: 150 }));
   app.get('/healthz', (req, res) => res.json({ ok: true, lobbies: lobbies.size }));
   app.get('/j/:code', (req, res) => res.redirect('/?code=' + encodeURIComponent(req.params.code.toUpperCase())));
   app.get('/qr/:code.svg', async (req, res) => {
@@ -593,6 +613,9 @@ function createApp(opts = {}) {
     ws.on('message', raw => {
       let m; try { m = JSON.parse(raw); } catch { return; }
       if (m.type === 'time') return send(ws, { type: 'time', c: Number(m.c) || 0, s: now() }); // NTP-style clock sync round trip
+      if (m.type === 'pollSub') { const c = String(m.code || '').toUpperCase(); if (!POLL_RE.test(c)) return;
+        if (ws.pollCode) pollSubs.get(ws.pollCode)?.delete(ws); ws.pollCode = c; if (!pollSubs.has(c)) pollSubs.set(c, new Set()); if (pollSubs.get(c).size < 200) pollSubs.get(c).add(ws);
+        const v = polls.view(c); return send(ws, v ? { type: 'poll', poll: v } : { type: 'poll', code: c, gone: true }); }
       if (!me) {
         if ((m.type === 'create' || m.type === 'join') && m.agreed !== true) return send(ws, { type: 'error', error: 'Please confirm you are 18+ and agree to the Terms and Privacy Policy', consent: true });
         const dev = typeof m.dev === 'string' ? m.dev : null, ref = normHandle(String(m.ref || '')) || null, social = socialIn(m);
@@ -619,6 +642,7 @@ function createApp(opts = {}) {
         send(ws, { type: 'joined', code: L.code, id: me.id, token: me.token });
         broadcast(L);
         if (L.state === 'ended') send(ws, { type: 'recap', recap: buildRecap(L) });
+        if (L.plan && polls.get(L.plan.code)) send(ws, { type: 'plan', ...L.plan });
         if (isHunter(me) && !preReveal(L)) for (const [id, ph] of Object.entries(L.photos)) send(ws, { type: 'camPeek', id, ...ph });
         return;
       }
@@ -640,6 +664,8 @@ function createApp(opts = {}) {
           else send(ws, viewFor(L, me));
           break;
         }
+        case 'plan': { const c = String(m.code || '').toUpperCase(); // a poll for the next game, shown on everyone's recap
+          if ((host || env.PLAN_ANYONE === '1') && polls.get(c)) { L.plan = { code: c, by: me.name }; for (const p of L.players.values()) send(p.ws, { type: 'plan', ...L.plan }); } break; }
         case 'ig': case 'social': me.social = socialIn(m); L.recapCache = null; if (me.social) stats.handle(me.social); if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
         case 'perm': me.perm = ['granted', 'denied', 'prompt', 'unsupported', 'error'].includes(m.perm) ? m.perm : 'unknown'; broadcast(L); break;
         case 'settings': if (host && L.state === 'lobby') {
@@ -742,10 +768,10 @@ function createApp(opts = {}) {
   });
 
   // keepalive so tunnels don't drop idle sockets
-  wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); });
+  wss.on('connection', ws => { ws.alive = true; ws.on('pong', () => ws.alive = true); ws.on('close', () => { if (ws.pollCode) { const s = pollSubs.get(ws.pollCode); s?.delete(ws); if (s && !s.size) pollSubs.delete(ws.pollCode); } }); });
   const hb = setInterval(() => wss.clients.forEach(c => { if (!c.alive) return c.terminate(); c.alive = false; try { c.ping(); } catch {} }), 20000);
-  server.on('close', () => { clearInterval(timer); clearInterval(hb); stats.flush(); });
-  return { stats, liveCounts, DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
+  server.on('close', () => { clearInterval(timer); clearInterval(hb); clearInterval(pollSweep); stats.flush(); });
+  return { stats, polls, liveCounts, DISCONNECT_GRACE_MS, app, server, wss, lobbies, refs, spawnDrop, tick, spawnBounty, distM, oobGrace, buildRecap };
 }
 
 module.exports = { BUSY_MSG, createApp, distM, bearingDeg, offsetM };

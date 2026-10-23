@@ -47,7 +47,18 @@ function connect() {
 }
 const sendMsg = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
 
+// ---------- plan the next game (poll; see plan.js) ----------
+let planCode = null, planBy = '', areaRound = -1;
+const canPlan = () => S && (S.you === S.host || !!window.RULES?.planAnyone);
+function renderPlanBox() { if (!S) return;
+  $('btnPlan').classList.toggle('hidden', !canPlan() || !!planCode); $('btnPlanOpen').classList.toggle('hidden', !planCode);
+  $('btnPlanOpen').textContent = planCode && window.Plan && localStorage.getItem('scramPolls')?.includes('"' + planCode + '"') ? '📅 Open your poll' : '🗳 Vote on the next game';
+  $('planNote').classList.toggle('hidden', !planCode); $('planNote').textContent = planCode ? `📅 ${planBy || 'The host'} started a poll for the next game · /p/${planCode}` : ''; }
+$('btnPlan').onclick = () => { const p = me(); Plan.openCreate({ field: S?.field, name: p?.name || localStorage.getItem('scramName') || '', social: p?.social || null, lobby: S?.code, loc: myLoc,
+  onCreated: code => { planCode = code; planBy = p?.name || ''; sendMsg({ type: 'plan', code }); renderPlanBox(); } }); };
+$('btnPlanOpen').onclick = () => planCode && Plan.openPoll(planCode);
 function handle(m) {
+  if (m.type === 'plan') { const fresh = planCode !== m.code; planCode = m.code; planBy = m.by || ''; renderPlanBox(); if (fresh && S && m.by !== me()?.name) toast(`📅 ${m.by || 'The host'} is planning the next game. Vote!`, 4000); return; }
   if (m.type === 'session') { if (m.ok && m.state !== 'ended') showRejoin(m); else { $('btnRejoin').classList.add('hidden'); if (!m.ok) { sess = null; localStorage.removeItem('scram'); } } }
   else if (m.type === 'joined') { $('btnRejoin').classList.add('hidden'); sess = { code: m.code, token: m.token, id: m.id, at: Date.now() }; localStorage.setItem('scram', JSON.stringify(sess)); history.replaceState(null, '', '/?code=' + m.code); startGps(); maybeSend(true); }
   else if (m.type === 'error') { if (m.busy) { $('busyMsg').textContent = m.error; $('busyMsg').classList.remove('hidden'); } else toast(m.error, 4000); if (m.reset) { sess = null; localStorage.removeItem('scram'); show('home'); } }
@@ -133,7 +144,7 @@ setInterval(() => {
   if (Date.now() - lastMsgAt > 10000 && !syncSentAt) { syncSentAt = Date.now(); sendMsg({ type: 'sync' }); }
 }, 2000);
 function resetLocal() {
-  sess = null; S = null; window.S = null; viewingEnd = false; lastRound = -1; localStorage.removeItem('scram');
+  sess = null; S = null; window.S = null; viewingEnd = false; lastRound = -1; planCode = null; localStorage.removeItem('scram');
   if (endMap) { endMap.remove(); endMap = null; endLayer = null; } if (map) { map.remove(); map = null; layers = {}; gameField = null; }
   if (fieldMap) { fieldMap.remove(); fieldMap = null; centerPin = null; fieldKey = ''; drawing = null; }
   history.replaceState(null, '', '/'); show('home');
@@ -593,7 +604,8 @@ function oobBanner() {
 
 // ---------- end ----------
 function renderEnd() {
-  show('end');
+  show('end'); renderPlanBox();
+  if (S.field && S.you === S.host && areaRound !== S.round && window.Plan) { areaRound = S.round; Plan.rememberArea(S.field); } // past play areas for the next poll
   $('winner').textContent = S.winner === 'hiders' ? '🙈 Hiders win!' : '🔦 Hunters win!';
   const hiders = S.players.filter(p => p.caught || p.role === 'hider');
   $('summary').innerHTML = hiders.map((p, i) => { const n = S.pings.filter(pg => pg.locs[p.id]).length;

@@ -4,10 +4,10 @@
   "description": "",
   "main": "server.js",
   "directories": {
-    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js"
+    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js test/plan.test.js"
   },
   "scripts": {
-    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js",
+    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js test/plan.test.js",
     "start": "node server.js"
   },
   "keywords": [],

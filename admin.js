@@ -9,7 +9,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const safeEq = (a, b) => { const x = crypto.createHash('sha256').update(String(a)).digest(), y = crypto.createHash('sha256').update(String(b)).digest(); return crypto.timingSafeEqual(x, y); };
 const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')).filter(p => p[0]).map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]));
 
-function mount(app, { env, stats, liveCounts }) {
+function mount(app, { env, stats, liveCounts, polls = null }) {
   const key = () => env.ADMIN_KEY || '';
   const token = () => crypto.createHmac('sha256', key()).update('lastping-admin-v1').digest('hex');
   const authed = req => { const k = key(); if (!k) return false;
@@ -23,14 +23,14 @@ function mount(app, { env, stats, liveCounts }) {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(req.query.key !== undefined)));
     if (req.query.key !== undefined) { setCookie(req, res); return res.redirect(303, '/admin'); } // strip the key from the URL / history
     const sort = req.query.sort === 'games' ? 'games' : 'last', pf = Socials.isPlatform(req.query.platform) ? req.query.platform : '';
-    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(sort, pf || null), sort, pf, req.query.deleted)));
+    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(sort, pf || null), sort, pf, req.query.deleted, polls && polls.summary())));
   });
   app.post('/admin/login', gate, form, (req, res) => {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(true)));
     setCookie(req, res); res.redirect(303, '/admin');
   });
   app.post('/admin/logout', gate, (req, res) => { res.clearCookie(COOKIE, { path: '/admin' }); res.redirect(303, '/admin'); });
-  app.get('/admin/stats.json', gate, (req, res) => { if (!authed(req)) return res.status(401).json({ error: 'unauthorized' }); res.json(stats.summary(liveCounts())); });
+  app.get('/admin/stats.json', gate, (req, res) => { if (!authed(req)) return res.status(401).json({ error: 'unauthorized' }); res.json({ ...stats.summary(liveCounts()), polls: polls ? polls.summary() : null }); });
   const csv = (req, res) => {
     if (!authed(req)) return res.status(401).type('text').send('Unauthorized');
     const q = v => { v = String(v ?? ''); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -83,7 +83,7 @@ function chart(days, field, color) { // inline SVG bar chart, 30 days
 <text x="0" y="12">${max}</text><text x="0" y="${H - 18}">0</text>${bars}<text x="${pad}" y="${H - 3}">${days[0].day.slice(5)}</text><text x="${W}" y="${H - 3}" text-anchor="end">today</text></svg>`;
 }
 
-function dashboard(s, saved, handles = s.handles, sort = 'last', pf = '', deleted) {
+function dashboard(s, saved, handles = s.handles, sort = 'last', pf = '', deleted, ps = null) {
   const c = (n, l) => `<div class="card"><div class="big">${esc(n)}</div><div class="lbl">${esc(l)}</div></div>`;
   const t = s.days[s.days.length - 1], st = s.settings;
   const refRows = s.refs.length ? s.refs.map(r => `<tr><td>@${esc(r.ref)}</td><td class="n">${r.players}</td><td class="n">${r.games}</td><td class="n">${r.visits}</td></tr>`).join('') : '<tr><td colspan="4" class="lbl">No ?ref traffic yet</td></tr>';
@@ -102,6 +102,7 @@ ${saved ? '<div class="ok">✅ Brake settings saved</div>' : ''}${deleted === '1
 <div class="two"><div class="card"><h2>Games created per day</h2>${chart(s.days, 'games', '#16a34a')}</div><div class="card"><h2>Unique players per day</h2>${chart(s.days, 'players', '#3b82f6')}</div></div>
 <div class="two"><div class="card"><h2>Top referrers (?ref)</h2><table><tr><th>Referrer</th><th class="n">New players</th><th class="n">Games</th><th class="n">Visits</th></tr>${refRows}</table></div>
 <div class="card"><h2>Shares</h2><table><tr><th>Kind</th><th class="n">Count</th></tr>${shareRows}</table><p class="lbl">Counted when a player taps Share on a reel or "Make it viral" clip.</p></div></div>
+${ps ? pollsCard(ps) : ''}
 <div class="card" id="handles"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>📇 Players' socials <span class="pill off" id="handleCount">${s.handleCount}</span></h2>
 <a href="/admin/socials.csv${pf ? '?platform=' + pf : ''}" download id="csvBtn"><button type="button">Download CSV</button></a></div>
 <div class="row" id="platformCounts" style="margin:0 0 10px">${[['', 'All', s.handleCount], ...Socials.LIST.map(k => [k, Socials.label(k), (s.platformCounts || {})[k] || 0])].map(([k, l, n]) =>
@@ -111,5 +112,15 @@ ${saved ? '<div class="ok">✅ Brake settings saved</div>' : ''}${deleted === '1
 ${handles.length ? handles.map(h => `<tr data-platform="${esc(h.platform)}"><td><a href="${esc(Socials.url(h))}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">@${esc(h.handle)}</a></td><td style="white-space:nowrap">${Socials.icon(h.platform, 16)} ${esc(Socials.label(h.platform))}</td><td>${esc(h.first.slice(0, 16).replace('T', ' '))}</td><td>${esc(h.last.slice(0, 16).replace('T', ' '))}</td><td class="n">${h.games}</td><td>${h.ref ? '@' + esc(h.ref) : '<span class="lbl">—</span>'}</td>
 <td><form method="post" action="/admin/handles/delete" class="del" style="margin:0" onsubmit="return confirm('Delete @' + this.handle.value + ' (' + this.dataset.label + ')? This cannot be undone.')" data-label="${esc(Socials.label(h.platform))}"><input type="hidden" name="platform" value="${esc(h.platform)}"><input type="hidden" name="handle" value="${esc(h.handle)}"><button class="ghost delBtn" title="Delete (removal request)">🗑️ Delete</button></form></td></tr>`).join('') : `<tr><td colspan="7" class="lbl">No handles${pf ? ' on ' + esc(Socials.label(pf)) : ''} yet</td></tr>`}</table>
 <p class="lbl">Only players who typed a social handle. Delete removes a handle on request. Times in UTC.</p></div>`;
+}
+const utc = ms => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+function pollsCard(ps) {
+  const rows = ps.recent.length ? ps.recent.map(p => `<tr data-poll="${esc(p.code)}"><td style="font-family:ui-monospace,monospace"><a href="/p/${esc(p.code)}" target="_blank" rel="noopener" style="color:#93c5fd">${esc(p.code)}</a></td><td>${p.by ? esc(p.by) : '<span class="lbl">—</span>'}</td><td>${esc(utc(p.createdAt))}</td><td class="n">${p.times}×${p.places}</td><td class="n">${p.voters}</td><td>${p.locked ? '🔒 locked' : '<span class="lbl">open</span>'}</td><td>${esc(utc(p.expiresAt))}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="lbl">No active polls</td></tr>';
+  return `<div class="card" id="polls" style="margin-bottom:14px"><h2>📅 Next-game polls <span class="pill off" id="pollCount">${ps.active}</span></h2>
+<div class="grid"><div><div class="big" id="pollActive">${ps.active}</div><div class="lbl">active (max ${ps.max})</div></div><div><div class="big" id="pollVoters">${ps.voters}</div><div class="lbl">voters in active polls</div></div>
+<div><div class="big">${ps.created}</div><div class="lbl">polls created</div></div><div><div class="big">${ps.locked}</div><div class="lbl">locked</div></div></div>
+<table id="pollTable"><tr><th>Code</th><th>By</th><th>Created</th><th class="n">Times×places</th><th class="n">Voters</th><th>Status</th><th>Expires</th></tr>${rows}</table>
+<p class="lbl">Recent polls (newest first). Polls expire 14 days after their latest time option and are lost when the free-plan disk resets. Times in UTC.</p></div>`;
 }
 module.exports = { mount };

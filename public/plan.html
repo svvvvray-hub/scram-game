@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020"><title>Plan the next Last Ping</title>
+<meta name="description" content="Who's down for another round of Last Ping? Vote on a time and place.">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<link rel="stylesheet" href="/style.css"></head><body class="planPage">
+<main class="screen" id="planMain">
+  <div id="poll"></div>
+  <div class="planFoot">
+    <a class="big btnLink" id="playLink" href="/">🏃 New here? Play Last Ping</a>
+    <p class="legalLinks note">No sign-up: your vote stores only the name and optional @ you type. <a href="/privacy" target="_blank" rel="noopener">Privacy</a> · <a href="/terms" target="_blank" rel="noopener">Terms</a></p>
+  </div>
+</main>
+<div id="toast" class="toast"></div>
+<script src="/vendor/leaflet.js"></script>
+<script src="/socials.js"></script>
+<script src="/config.js"></script>
+<script src="/plan.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), ref = q.get('ref');
+  try { if (ref && !localStorage.getItem('scramRef')) localStorage.setItem('scramRef', ref.slice(0, 40)); } catch (e) {}
+  var code = (location.pathname.split('/')[2] || '').toUpperCase();
+  window.pollCtl = Plan.render(document.getElementById('poll'), code, { page: true });
+  document.body.dataset.ready = '1';
+})();
+</script>
+</body></html>

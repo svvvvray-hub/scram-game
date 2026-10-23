@@ -20,7 +20,7 @@ const hashId = s => crypto.createHash('sha256').update('lastping:' + s).digest('
 
 function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames = 50 } = {}) {
   const blank = () => ({ v: 1, days: {}, devices: {}, refs: {}, handles: {}, playClicks: 0, shares: {}, totals: { games: 0, started: 0, players: 0, blocked: 0 },
-    settings: { paused: false, maxGames, maxPerHour: 0 }, recentCreates: [] });
+    settings: { paused: false, maxGames, maxPerHour: 0 }, recentCreates: [], polls: {}, pollTotals: { created: 0, votes: 0, locked: 0 } });
   let d = blank();
   if (file) try { const j = JSON.parse(fs.readFileSync(file, 'utf8')); d = { ...blank(), ...j, totals: { ...blank().totals, ...j.totals }, settings: { ...blank().settings, ...j.settings } }; } catch {}
   d.handles = migrateHandles(d.handles); d.v = 2;
@@ -50,7 +50,7 @@ function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames
     .sort(sort === 'games' ? (a, b) => b.games - a.games || b.last.localeCompare(a.last) : (a, b) => b.last.localeCompare(a.last) || b.games - a.games);
   const platformCounts = () => { const c = {}; for (const r of Object.values(d.handles)) c[r.platform] = (c[r.platform] || 0) + 1; return c; };
   return {
-    data: () => d, flush, handle, handleList, deleteHandle, platformCounts,
+    data: () => d, flush, touch, handle, handleList, deleteHandle, platformCounts,
     player,
     gameCreated(dev, ref) { const h = player(dev, ref); d.totals.games++; today().games++; const r = (h && d.devices[h].ref) || ref; if (r) refRow(r).games++; d.recentCreates.push(now()); touch(); },
     gameStarted() { d.totals.started++; today().started++; touch(); },

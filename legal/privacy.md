@@ -37,6 +37,7 @@ Last Ping (the "**Game**") is a free, browser-based GPS hide-and-seek game. It i
 | **Highlight cuts** (optional) | Only if you tap "Send my highlights to host" | The lobby host (for a group highlight reel) | Server memory for **30 minutes at most**, or less if Play again starts or the lobby closes |
 | **Video you record** | When you use Record | Only you; it stays on your device | We never receive it (unless you send highlights, as above) |
 | **Referral visits** | When someone opens a link with `?ref=<handle>` | Us | The count is kept in server memory; each visit is also written to our server logs (handle and page). See section 6 |
+| **Next-game poll votes** (optional) | You vote on a "Plan the next game" poll | Anyone with the poll link | Only the name and optional social media handle you type, plus your time/place picks; deleted 14 days after the poll's last time option (or sooner if the server restarts) |
 | **Technical data** | Every request | Us, our host, and the map tile provider | See section 6 |
 
 We **do not** collect your real name, email address, phone number, contacts, or payment information. We do not ask for them, and we have no account system.
