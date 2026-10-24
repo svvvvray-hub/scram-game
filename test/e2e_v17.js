@@ -37,11 +37,12 @@ const LAT = 37.7596, LNG = -122.4269, M = 1 / 111320;
   await A.waitForSelector('#tagRing.hider:not(.hidden)', { timeout: 5000 }); await H.waitForSelector('#tagRing.hunter:not(.hidden)', { timeout: 5000 });
   check((await H.textContent('#tagTxt')).includes('Closing in'), 'hunter sees only "Closing in…"');
   await A.screenshot({ path: 'shots/v17_hider_ring.png' }); await H.screenshot({ path: 'shots/v17_hunter_ring.png' });
-  await A.waitForFunction(() => S.players.find(p => p.id === S.you).caught, null, { timeout: 25000 });
+  for (let i = 0; i < 40 && !(await A.evaluate(() => S.players.find(p => p.id === S.you).caught)); i++) { await sleep(700); await go(H, 1 + (i % 2) * 0.3); await go(A, 0); }
+  await A.waitForFunction(() => S.players.find(p => p.id === S.you).caught, null, { timeout: 3000 });
   const took = Date.now() - tc; check(took >= 9000, `staying within 3 m for ~10 s tags Ana (server), took ${(took / 1000).toFixed(1)} s`);
   await sleep(800); await H.screenshot({ path: 'shots/v17_tagged.png' });
   const hm = await H.evaluate(() => window.__msgs.filter(m => m.type === 'tagProg'));
-  check(hm.length > 0 && hm.every(m => Object.keys(m).sort().join() === 'p,role,type'), 'hunter tagProg messages carry only a number');
+  check(hm.length > 0 && hm.every(m => Object.keys(m).sort().join() === 'p,paused,role,type'), 'hunter tagProg messages carry only a number');
   const leak = await H.evaluate(() => window.__msgs.filter(m => m.type !== 'state' && m.type !== 'ping' && m.type !== 'recap').map(JSON.stringify).join('')); 
   check(!leak.includes(String((LAT + 400 * M).toFixed(4))), 'Ben\'s position never sent to the hunter');
   check(!(await H.evaluate(() => S.players.find(p => p.name === 'Ben').caught)), 'Ben (far away) untouched');

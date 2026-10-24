@@ -10,6 +10,8 @@ const Recap = require('./public/recap');
 const Socials = require('./public/socials');
 const PU = require('./powerups');
 const Tasks = require('./tasks');
+const Walk = require('./walk');
+const TagCore = require('./tagcore');
 const { createStats, normHandle } = require('./stats');
 const { createSupabaseStore } = require('./supabase');
 const Admin = require('./admin');
@@ -227,7 +229,8 @@ function createApp(opts = {}) {
     v.catches = catchView(L, me);
     if (L.state === 'playing') { // hider drops ONLY to uncaught hiders; hunter drops to everyone
       const hiderView = me.role === 'hider' && !me.caught;
-      v.drops = [...L.drops.values()].filter(d => d.side === 'hunter' || hiderView).map(d => ({ id: d.id, side: d.side, lat: d.lat, lng: d.lng, expiresAt: d.expiresAt, ptype: d.type }));
+      // v19: hunters see hider-drop LOCATIONS too (dimmed, not pickable, no type); never hider positions
+      v.drops = [...L.drops.values()].map(d => ({ id: d.id, side: d.side, lat: d.lat, lng: d.lng, expiresAt: d.expiresAt, ...(d.side === 'hunter' || hiderView ? { ptype: d.type } : { locked: true }) }));
       v.pu = { held: me.held, cooldownMs: puCooldown(L), cooldownUntil: me.lastUse ? me.lastUse + puCooldown(L) : 0, silent: me.silent, shieldUntil: me.shieldUntil, radarUntil: me.radarUntil, houndUntil: me.houndUntil,
         pickup: me.pickup ? { dropId: me.pickup.dropId, since: me.pickup.since, need: pickupMs(L) } : null };
       if (isHunter(me)) v.jamUntil = L.jamUntil;
@@ -519,14 +522,28 @@ function createApp(opts = {}) {
   // test hook only: SCRAM_TEST_PU=hider:radar,hunter:sonar forces drop types (e2e)
   const forcedPU = Object.fromEntries(String(opts.forcePU ?? env.SCRAM_TEST_PU ?? '').split(',').map(x => x.split(':')).filter(([k, v]) => (k === 'hider' && v in PU.HIDER) || (k === 'hunter' && v in PU.HUNTER)));
   function scheduleDrops(L) { L.drops.clear(); L.dropSide = 'hider'; L.nextDropAt = L.settings.powerups === 'off' ? 0 : L.hideEndsAt + Math.max(120 * sc(L), dropEvery(L)); }
+  // v19 walkable ground: Overpass, server-side, cached per game; null = disabled (unit tests run quiet unless they pass opts.overpass)
+  const OVERPASS = env.SCRAM_OVERPASS === 'off' ? null : opts.overpass !== undefined ? opts.overpass : opts.quiet ? null : { url: env.OVERPASS_URL || Walk.DEFAULT_URL };
+  function loadWalk(L) {
+    L.walk = null; if (!OVERPASS || L.settings.powerups === 'off') return null;
+    const bbox = Walk.bboxOf(L.field, [...L.players.values()].filter(p => p.loc).map(p => p.loc)); if (!bbox) return null;
+    const round = L.round; L.walk = { status: 'loading' };
+    return L.walkP = Walk.fetchWalk(bbox, { fetch: OVERPASS.fetch, url: OVERPASS.url, timeoutMs: OVERPASS.timeoutMs || 9000 })
+      .then(w => { if (L.round === round) L.walk = { status: 'ok', ...w }; }, e => { if (L.round === round) L.walk = { status: 'fail', error: String(e.message || e) }; });
+  }
   function spawnDrop(L, side, rand = Math.random) {
     const f = curField(L), hs = activeHiders(L).filter(h => h.loc), hu = hunterList(L).filter(h => h.loc);
-    let pos = null;
-    if (side === 'hider' && hs.length) { const h = hs[Math.floor(rand() * hs.length)]; pos = PU.spawnPoint(h.loc, hu.map(x => x.loc), f, rand); }
-    else if (side === 'hunter' && hu.length) { const h = hu[Math.floor(rand() * hu.length)]; pos = PU.spawnPoint(h.loc, null, f, rand); }
+    let pos = null; const W = L.walk && L.walk.status === 'ok' ? L.walk : null;
+    if (W) { // on walkable ways first; same distance / avoid rules as before
+      if (side === 'hider' && hs.length) { const h = hs[Math.floor(rand() * hs.length)]; pos = Walk.spawnOnWalk(W, h.loc, hu.map(x => x.loc), f, rand); }
+      else if (side === 'hunter' && hu.length) { const h = hu[Math.floor(rand() * hu.length)]; pos = Walk.spawnOnWalk(W, h.loc, null, f, rand); }
+      if (!pos && f) pos = Walk.spawnOnWalk(W, null, null, f, rand);
+    }
+    if (!pos && side === 'hider' && hs.length) { const h = hs[Math.floor(rand() * hs.length)]; pos = PU.spawnPoint(h.loc, hu.map(x => x.loc), f, rand); }
+    else if (!pos && side === 'hunter' && hu.length) { const h = hu[Math.floor(rand() * hu.length)]; pos = PU.spawnPoint(h.loc, null, f, rand); }
     if (!pos && f) pos = Field.randomPoint(f, rand);
     if (!pos) return null;
-    const d = { id: rid(4), side, lat: pos.lat, lng: pos.lng, t: now(), expiresAt: now() + dropTtl(L), type: forcedPU[side] || PU.roll(side, rand) };
+    const d = { id: rid(4), side, lat: pos.lat, lng: pos.lng, onWay: !!W && Walk.onWalk(W, pos), t: now(), expiresAt: now() + dropTtl(L), type: forcedPU[side] || PU.roll(side, rand) };
     L.drops.set(d.id, d); logEv(L, 'drop', { side, lat: d.lat, lng: d.lng, dropId: d.id }, side === 'hider' ? '🎁 A hider power-up dropped' : '⚡ A hunter power-up dropped');
     for (const p of L.players.values()) if (side === 'hunter' || (p.role === 'hider' && !p.caught)) send(p.ws, { type: 'drop', side });
     return d;
@@ -665,41 +682,70 @@ function createApp(opts = {}) {
   }
   // ---- v17 automatic proximity tag (server-only; positions never leave the server) ----
   const TAG_MS = opts.tagMs ?? 10000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
-  // poor accuracy => longer contact AND a tighter distance
-  function tagRule(R, acc) { const bad = Math.max(0, acc - R); return { need: Math.round(TAG_MS * (1 + Math.min(1, bad / 10))), within: Math.max(R * 0.6, R - bad * 0.1) }; }
+  // v19: GPS gaps (no fresh fix from a phone) PAUSE the ring; only confirmed out-of-range positions reset it (after the grace).
+  const TAG_LIVE = opts.tagLiveMs ?? 4500, TAG_GAP = opts.tagGapMs ?? 8000, TAG_FB_MIN = 0.3, FB_CLAIM_MS = opts.tagClaimMs ?? 30000, FB_HIDER_MS = opts.tagHiderMs ?? 15000, FB_HOST_MS = 60000;
+  function tagFallback(L, h, x) { // hider's GPS went quiet mid-tag: hunter may claim, hider confirms, else the host decides
+    L.tagFb ||= new Map(); for (const f of L.tagFb.values()) if (f.hiderId === h.id) return;
+    const key = rid(6), f = { key, hunterId: x.id, hiderId: h.id, phase: 'hunter', at: now() }; L.tagFb.set(key, f);
+    send(x.ws, { type: 'tagFallback', key, expiresAt: f.at + FB_CLAIM_MS }); // no position, no name
+    logEv(L, 'tagfb', { id: h.id, by: x.id }, `📶 ${h.name}'s GPS went quiet during a tag by ${x.name}`);
+  }
+  function fbDone(L, f, ok, why) {
+    L.tagFb.delete(f.key); const h = L.players.get(f.hiderId), x = L.players.get(f.hunterId), host = L.players.get(L.hostId);
+    for (const p of [h, x, host]) if (p) send(p.ws, { type: 'tagFbEnd', key: f.key, ok, why });
+    if (ok && h && x && h.role === 'hider' && !h.caught) { logEv(L, 'autotag', { id: h.id, by: x.id, fallback: why }, `📍 Tag confirmed (${why}): ${x.name} tagged ${h.name}`); catchHider(L, h, x, true); }
+  }
+  function tickTagFb(L) {
+    if (!L.tagFb || !L.tagFb.size) return; const t = now();
+    for (const f of [...L.tagFb.values()]) {
+      const h = L.players.get(f.hiderId), x = L.players.get(f.hunterId);
+      if (!h || !x || h.caught || h.role !== 'hider' || !isHunter(x)) { fbDone(L, f, false, 'gone'); continue; }
+      if (f.phase === 'hunter' && t > f.at + FB_CLAIM_MS) fbDone(L, f, false, 'unclaimed');
+      else if (f.phase === 'hider' && t > f.askedAt + FB_HIDER_MS) { f.phase = 'host'; f.hostAt = t; send(h.ws, { type: 'tagFbEnd', key: f.key, ok: null, why: 'host' });
+        const host = L.players.get(L.hostId); send(host?.ws, { type: 'tagHost', key: f.key, hunter: x.name, hider: h.name }); }
+      else if (f.phase === 'host' && t > f.hostAt + FB_HOST_MS) fbDone(L, f, false, 'timeout');
+    }
+  }
   function tickTags(L) {
     const R = L.settings.autoTag, t = now(); if (!L.tags) L.tags = new Map();
+    tickTagFb(L);
     if (!R) return;
-    const hunters = [...L.players.values()].filter(p => isHunter(p) && p.loc && t - p.loc.recvAt < TAG_FRESH);
-    const prog = new Map(); // player id -> best progress 0..1
-    const bump = (id, v) => prog.set(id, Math.max(prog.get(id) || 0, v));
+    const o = { ...TagCore.DEF, R, tagMs: TAG_MS, farMs: Math.min(TagCore.DEF.farMs, TAG_GRACE * 2), windowMs: opts.tagWindowMs ?? TagCore.DEF.windowMs, minSamples: opts.tagMinSamples ?? TagCore.DEF.minSamples };
+    const hunters = [...L.players.values()].filter(p => isHunter(p) && p.loc);
+    const prog = new Map(), paused = new Set(), boost = new Set(), dbg = new Map();
+    const bump = (id, v, pz, d) => { if (v >= (prog.get(id) || 0)) { prog.set(id, v); if (pz) paused.add(id); else paused.delete(id); if (d) dbg.set(id, d); } };
     for (const h of activeHiders(L)) {
+      if (!h.loc) continue;
       for (const x of hunters) {
-        const key = x.id + '>' + h.id; let g = L.tags.get(key);
-        const fresh = h.loc && t - h.loc.recvAt < TAG_FRESH, acc = fresh ? Math.max(h.loc.acc || 0, x.loc.acc || 0) : 999;
-        const rule = tagRule(R, acc), inR = fresh && acc <= TAG_MAX_ACC && distM(h.loc, x.loc) <= rule.within;
-        if (inR) {
-          const fx = h.loc.recvAt + ':' + x.loc.recvAt;
-          if (!g) { g = { start: t, lastIn: t, fixes: 1, fx }; L.tags.set(key, g); }
-          g.lastIn = t; if (g.fx !== fx) { g.fx = fx; g.fixes++; }
-          const p = Math.min(1, (t - g.start) / rule.need);
-          if (p >= 1 && g.fixes >= 2) { // continuous contact, confirmed by more than one GPS fix: a walk-by never gets here
-            for (const k of [...L.tags.keys()]) if (k.endsWith('>' + h.id)) L.tags.delete(k);
-            h.tagP = x.tagP = 0; send(h.ws, { type: 'tagProg', p: 0, role: 'hider' }); send(x.ws, { type: 'tagProg', p: 0, role: 'hunter' });
-            logEv(L, 'autotag', { id: h.id, by: x.id }, `📍 Auto-tag: ${x.name} stayed next to ${h.name}`);
-            catchHider(L, h, x); if (L.state !== 'playing') return; break;
-          }
-          bump(h.id, Math.min(p, 0.99)); bump(x.id, Math.min(p, 0.99));
-        } else if (g) {
-          if (t - g.lastIn > TAG_GRACE) L.tags.delete(key); // out of range too long: tag broken, ring resets
-          else { const p = Math.min(0.99, (g.lastIn - g.start) / rule.need); bump(h.id, p); bump(x.id, p); }
+        const key = x.id + '>' + h.id; let g = L.tags.get(key); if (!g) { g = TagCore.newPair(t); L.tags.set(key, g); } // every hunter x hider pair is tracked (history matters)
+        const hAge = t - h.loc.recvAt, xAge = t - x.loc.recvAt, live = hAge <= TAG_LIVE && xAge <= TAG_LIVE;
+        if (!live) { // GPS gap: pause, don't reset
+          g.lastT = t; if (g.acc <= 0) continue; const p = Math.min(0.99, g.acc / o.tagMs);
+          if (t - (g.lastSampleT || t) > TAG_GAP) { g.acc = 0; g.samples = []; if (hAge > TAG_LIVE && p >= TAG_FB_MIN) tagFallback(L, h, x); continue; }
+          bump(h.id, p, true, g.dbg); bump(x.id, p, true, g.dbg); boost.add(h.id); boost.add(x.id); continue;
         }
+        const fx = h.loc.recvAt + ':' + x.loc.recvAt; let sample = null;
+        if (fx !== g.fx) { g.fx = fx; g.lastSampleT = t; sample = { a: TagCore.smooth(h.fixHist, t, o) || h.loc, b: TagCore.smooth(x.fixHist, t, o) || x.loc }; }
+        const res = TagCore.step(g, t, sample, o);
+        if (res === 'tag') {
+          for (const k of [...L.tags.keys()]) if (k.endsWith('>' + h.id)) L.tags.delete(k);
+          h.tagP = x.tagP = 0; send(h.ws, { type: 'tagProg', p: 0, paused: false, role: 'hider' }); send(x.ws, { type: 'tagProg', p: 0, paused: false, role: 'hunter' });
+          logEv(L, 'autotag', { id: h.id, by: x.id }, `📍 Auto-tag: ${x.name} stayed next to ${h.name}`);
+          catchHider(L, h, x); if (L.state !== 'playing') return; break;
+        }
+        if (g.ratio > 0) { boost.add(h.id); boost.add(x.id); } // anything close in the window: fast GPS on both phones
+        if (g.acc > 0) { const p = Math.min(0.99, g.acc / o.tagMs); bump(h.id, p, res === 'pause', g.dbg); bump(x.id, p, res === 'pause', g.dbg); }
+        else if (g.dbg && g.ratio > 0) { if (!dbg.has(h.id)) dbg.set(h.id, g.dbg); if (!dbg.has(x.id)) dbg.set(x.id, g.dbg); }
       }
     }
     for (const k of [...L.tags.keys()]) { const [a, b] = k.split('>'); const x = L.players.get(a), h = L.players.get(b); if (!x || !h || !isHunter(x) || h.caught || h.role !== 'hider') L.tags.delete(k); }
+    const dbgOn = !!L.settings.tagDebug;
     for (const p of L.players.values()) { // send only on change; hunters get a bare number (no id, no direction, no distance)
-      const v = Math.round((prog.get(p.id) || 0) * 20) / 20; if (v === (p.tagP || 0)) continue; p.tagP = v;
-      if (L.state === 'playing') send(p.ws, { type: 'tagProg', p: v, role: isHunter(p) ? 'hunter' : 'hider' });
+      const v = Math.round((prog.get(p.id) || 0) * 20) / 20, pz = v > 0 && paused.has(p.id), isHost = p.id === L.hostId;
+      const d = dbgOn && isHost ? dbg.get(p.id) || null : null, dj = d ? JSON.stringify(d) : '';
+      if (v !== (p.tagP || 0) || pz !== !!p.tagPz || dj !== (p.tagDbg || '')) { p.tagP = v; p.tagPz = pz; p.tagDbg = dj;
+        if (L.state === 'playing') send(p.ws, { type: 'tagProg', p: v, paused: pz, role: isHunter(p) ? 'hunter' : 'hider', ...(d ? { dbg: d } : {}) }); } // dbg: host's own phone only, when the host turned it on
+      const b = boost.has(p.id) && L.state === 'playing'; if (b !== !!p.boost) { p.boost = b; send(p.ws, { type: 'gpsBoost', on: b }); }
     }
   }
   // ---- v18 post-round Regroup: only while L.state === 'ended' (all in-game secrecy rules are untouched) ----
@@ -728,8 +774,8 @@ function createApp(opts = {}) {
   }
   function resetFeatures(L, ps) {
     L.bounty = null; L.photos = {}; L.camAt = L.compassAt = L.nextBountyAt = L.nextCompassAt = L.camDeadline = 0; L.compassAnnounced = false;
-    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; p.task = null; p.noisy = false; p.tagP = 0; }
-    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null; L.taskTimes = []; L.taskIdx = 0; L.tags = new Map();
+    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; p.task = null; p.noisy = false; p.tagP = 0; p.tagPz = false; p.boost = false; p.tagDbg = ""; }
+    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null; L.taskTimes = []; L.taskIdx = 0; L.tags = new Map(); L.tagFb = new Map();
   }
   function rematch(L) {
     if (L.state !== 'ended') return;
@@ -816,7 +862,7 @@ function createApp(opts = {}) {
           if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return; // (0,0) = "null island" bogus fix
           const first = !me.loc, ts = Number(m.ts), tn = now();
           me.loc = { lat, lng, acc: clampNum(m.acc, 0, 1e5, 999), ts: Number.isFinite(ts) && Math.abs(ts - tn) < 864e5 ? ts : tn, recvAt: tn };
-          trail(L, me); holdFix(L, me);
+          me.fixHist ||= []; TagCore.pushFix(me.fixHist, { lat, lng, acc: me.loc.acc, t: tn }); trail(L, me); holdFix(L, me);
           if (L.state === 'playing' && L.drops.size) checkPickups(L);
           // Only hunters' live positions are pushed; hider updates trigger no broadcast with coords.
           const of = outFlag(L, me), ofChanged = of !== me.lastOut; me.lastOut = of;
@@ -848,6 +894,7 @@ function createApp(opts = {}) {
           if (['off', 'normal', 'often'].includes(s.tasks)) L.settings.tasks = s.tasks;
           if ([0, 2, 3, 5].includes(s.autoTag)) L.settings.autoTag = s.autoTag;
           if ('manualTag' in s) L.settings.manualTag = !!s.manualTag;
+          if ('tagDebug' in s) L.settings.tagDebug = !!s.tagDebug;
           if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];
           if (s.mode && MODES[s.mode] && s.mode !== 'custom') applyMode(L.settings, s.mode); // a preset wins over the individual toggles
@@ -884,7 +931,7 @@ function createApp(opts = {}) {
           resetFeatures(L, ps); clearRound(L);
           { const sc = scale(L) * 1000, h = L.hideEndsAt;
             L.nextBountyAt = h + 300 * sc; L.camAt = h + 600 * sc; L.compassAt = h + 1080 * sc; L.nextCompassAt = 0; }
-          scheduleDrops(L); scheduleTasks(L);
+          scheduleDrops(L); scheduleTasks(L); loadWalk(L);
           if (L.state === 'playing') L.nextPingAt = t + L.settings.pingSec * 1000;
           else L.nextPingAt = L.hideEndsAt + L.settings.pingSec * 1000;
           event(L, L.state === 'hiding' ? 'Hiders, go hide!' : 'Hunt is on!'); logEv(L, 'start', {}, L.state === 'hiding' ? '🙈 Head start — hiders go hide' : '🔦 Hunt is on');
@@ -905,6 +952,11 @@ function createApp(opts = {}) {
         case 'catch': { const h = L.players.get(m.id);
           if (host && isHunter(me)) catchHider(L, h, me); // host override: immediate (always, even with manual tags off)
           else if (isHunter(me) && L.settings.manualTag !== false) claimCatch(L, h, me, 'hunter'); break; }
+        case 'tagDebug': if (host) { L.settings.tagDebug = !!m.on; me.tagDbg = ''; broadcast(L); } break; // host can flip it mid-game too
+        case 'tagClaim': { const f = L.tagFb?.get(String(m.key || '')); if (!f || f.phase !== 'hunter' || f.hunterId !== me.id) break;
+          f.phase = 'hider'; f.askedAt = now(); const h = L.players.get(f.hiderId); send(h?.ws, { type: 'tagAsk', key: f.key, by: me.name, expiresAt: f.askedAt + FB_HIDER_MS }); send(ws, { type: 'tagFbWait', key: f.key }); break; }
+        case 'tagAnswer': { const f = L.tagFb?.get(String(m.key || '')); if (!f || f.phase !== 'hider' || f.hiderId !== me.id) break; fbDone(L, f, !!m.yes, m.yes ? 'hider' : 'denied'); break; }
+        case 'tagHostAnswer': { const f = L.tagFb?.get(String(m.key || '')); if (!f || f.phase !== 'host' || !host) break; fbDone(L, f, !!m.yes, m.yes ? 'host' : 'host-denied'); break; }
         case 'caughtSelf': if (me.role === 'hider' && L.settings.manualTag !== false) claimCatch(L, me, null, 'hider'); break;
         case 'usePower': usePower(L, me); break;
         case 'chimeTest': if (host && L.state === 'lobby') { // preview on every phone; throttled to once per 1.5 s

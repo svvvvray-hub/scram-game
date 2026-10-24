@@ -79,7 +79,7 @@ test('drop timing: none in the first 2 (scaled) min, every 3 min alternating sid
   }
   assert.ok(runs.chaos.length > runs.normal.length);
 });
-test('drop placement, despawn after 2.5 min, and visibility: hider drops never reach hunters', async () => {
+test('drop placement, despawn after 2.5 min, and visibility: hunters see hider-drop locations only (locked, no type)', async () => {
   const a = await boot(); const cs = await lobby(a, ['hunter', 'hider', 'hider'], { gameSec: 1200, powerups: 'normal' }); const [h, s1, s2] = cs;
   h.send({ type: 'field', field: { circle: { lat: B.lat, lng: B.lng, r: 400 }, poly: null } }); await until(() => h.state.field);
   loc(h, at(150, 270)); loc(s1, at(100)); loc(s2, at(120, 0)); await sleep(40);
@@ -89,9 +89,9 @@ test('drop placement, despawn after 2.5 min, and visibility: hider drops never r
     const dh = Math.min(...[s1, s2].map(c => distM(P(a, c).loc, d))); assert.ok(dh >= 49 && dh <= 201 + 130, 'near a hider ' + dh); L.drops.delete(d.id); }
   for (let i = 0; i < 30; i++) { const d = a.spawnDrop(L, 'hunter'); const dd = distM(P(a, h).loc, d); assert.ok(dd >= 49 && dd <= 201 && Field.inField(L.field, d), 'hunter drop ' + dd); L.drops.delete(d.id); }
   const hd = a.spawnDrop(L, 'hider'), ud = a.spawnDrop(L, 'hunter'); h.send({ type: 'sync' }); s1.send({ type: 'sync' });
-  await until(() => s1.state.drops?.length === 2 && h.state.drops?.length === 1);
-  assert.equal(h.state.drops[0].id, ud.id);
-  assert.ok(!h.raw().includes(hd.id) && !h.raw().includes(String(hd.lat).slice(0, 9)), 'hider drop id/coords never sent to hunters');
+  await until(() => s1.state.drops?.length === 2 && h.state.drops?.length === 2);
+  const hv = h.state.drops.find(d => d.id === hd.id); assert.ok(hv.locked && !('ptype' in hv), 'hunter sees the hider drop locked, without its type'); assert.ok(h.state.drops.find(d => d.id === ud.id).ptype);
+  assert.ok(!('locked' in s1.state.drops.find(d => d.id === hd.id)));
   assert.ok(h.got('drop').every(m => m.side === 'hunter'), 'hunters only notified of hunter drops');
   L.drops.get(ud.id).expiresAt = Date.now() + 100; await until(() => !L.drops.has(ud.id)); // despawn
   assert.equal(L.settings.powerups, 'normal'); assert.ok(Math.abs((L.drops.get(hd.id).expiresAt - L.drops.get(hd.id).t) - 150000) < 50, '2.5 min ttl at 20 min');

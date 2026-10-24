@@ -77,6 +77,7 @@ function handle(m) {
   else if (window.TaskUI && TaskUI.onMsg(m)) { /* v16 tasks */ }
   else if (window.Regroup && Regroup.onMsg(m)) { /* v18 regroup */ }
   else if (m.type === 'tagProg') tagRing(m);
+  else if (window.TagFx && TagFx.onMsg(m)) { /* v19 tag boost / fallback */ }
   else if (m.type === 'need_fix') freshFix();
   else if (m.type === 'ping') { onPingFx(m); if (m.locs) { nearestId = m.nearest || null; toast(`📡 Ping #${m.n}: hider locations updated`); if (S && S.state === 'playing') { S.last = S.last || {}; for (const [id, l] of Object.entries(m.locs)) if (l) S.last[id] = { ...l, t: m.t }; for (const id of m.hidden || []) delete S.last[id]; S.pingCount = m.n; render(); } } else if (S && me()?.role === 'hider') { toast(m.out ? `💰 Surprise ping — a hunter grabbed the bounty and saw you!` : `📡 Ping #${m.n} — hunters just saw your location!`, 4000); navigator.vibrate?.(300); } }
   else if (m.type === 'chime') { playChime(); toast(m.sonar ? '🔊 Sonar made you chime! A hunter is within 75 m' : '🔔 You chimed! A hunter is within 40 m', 5000); fx('🔔 You chimed at the last ping — a hunter is close!'); coach('chime'); }
@@ -140,9 +141,9 @@ function renderPower() {
 function renderDrops() {
   if (!map) return; const ds = S.state === 'playing' ? S.drops || [] : [], seen = {};
   for (const d of ds) { seen[d.id] = 1; if (dropLayers[d.id]) continue;
-    const hider = d.side === 'hider';
+    const hider = d.side === 'hider', locked = !!d.locked; // v19: a hider drop seen by a hunter (dimmed, can't be picked up)
     const g = Icons.has(d.ptype) ? d.ptype : hider ? 'gift' : 'bolt', nm = PU_INFO[d.ptype]?.[1] || 'power-up';
-    dropLayers[d.id] = L.layerGroup([L.circle([d.lat, d.lng], { radius: 15, color: hider ? Icons.COL.hider : Icons.COL.hunter, weight: 2, dashArray: '4', fillColor: Icons.COL.drop, fillOpacity: .18 }),
+    dropLayers[d.id] = locked ? L.layerGroup([L.marker([d.lat, d.lng], { opacity: 0.55, interactive: false, icon: L.divIcon({ className: 'mkWrap', html: Icons.badge('gift', Icons.COL.hider, { size: 26, cls: 'drop hider locked' }), iconSize: [26, 26], iconAnchor: [13, 13] }) }).bindTooltip('Hider drop · hunters can’t take it', { direction: 'top', offset: [0, -12] })]).addTo(map) : L.layerGroup([L.circle([d.lat, d.lng], { radius: 15, color: hider ? Icons.COL.hider : Icons.COL.hunter, weight: 2, dashArray: '4', fillColor: Icons.COL.drop, fillOpacity: .18 }),
       L.marker([d.lat, d.lng], { icon: L.divIcon({ className: 'mkWrap', html: Icons.badge(g, Icons.COL.drop, { size: 34, cls: 'drop ' + d.side }), iconSize: [34, 34], iconAnchor: [17, 17] }) }).bindTooltip(hider ? `Hider drop: ${nm} · stand here 5 s` : (me()?.role === 'hider' ? `Hunter drop: ${nm} · steal it (you get pinged!)` : `Hunter drop: ${nm} · stand here 5 s`), { permanent: true, direction: 'top', offset: [0, -16] })]).addTo(map); }
   for (const id in dropLayers) if (!seen[id]) { dropLayers[id].remove(); delete dropLayers[id]; }
   const pk = S.pu?.pickup, ring = $('pickupRing');
@@ -170,7 +171,7 @@ function startGps() {
   watchId = navigator.geolocation.watchPosition(pos => {
     const l = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: pos.timestamp || Date.now() };
     if (!GpsThrottle.accept(myLoc, l, Date.now())) return; // NaN / (0,0) / out-of-order / coarse fix right after a good one
-    myLoc = l; maybeSend();
+    myLoc = l; window.lastWatchAt = Date.now(); maybeSend();
   }, err => {
     const perm = err.code === 1 ? 'denied' : 'error';
     sendMsg({ type: 'perm', perm });
@@ -349,7 +350,7 @@ function renderLobby() {
     $('pickNote').textContent = hp.manual ? `🔒 Manual pick (secret — only you see this): ${hp.ids.length} hunter${hp.ids.length === 1 ? '' : 's'} picked. Everyone else hides.` : `🎲 Roles are dealt randomly at start: ${Math.min(hp.hunters, Math.max(1, S.players.length - 1))} hunter(s), nobody sees roles until the reveal.`; }
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   set('sGame', +(st.gameSec / 60).toFixed(2)); set('sPing', st.pingSec); set('sHide', st.hideSec);
-  set('sPower', st.powerups || 'normal'); set('sTasks', st.tasks || 'off'); set('sAutoTag', String(st.autoTag || 0)); $('sManualTag').checked = st.manualTag !== false; set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
+  set('sPower', st.powerups || 'normal'); set('sTasks', st.tasks || 'off'); set('sAutoTag', String(st.autoTag || 0)); $('sManualTag').checked = st.manualTag !== false; $('sTagDebug').checked = !!st.tagDebug; set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
   $('sPower').disabled = $('sTasks').disabled = $('sAutoTag').disabled = $('sChimeVol').disabled = S.you !== S.host;
   $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed; $('sMates').checked = st.teammates !== false;
   for (const [f, id] of FEAT) $(id).checked = !!st.features?.[f];
@@ -361,7 +362,7 @@ function renderLobby() {
 }
 const FEAT = [['decoy', 'fDecoy'], ['chime', 'fChime'], ['bounty', 'fBounty'], ['cam', 'fCam'], ['compass', 'fCompass']];
 function pushSettings(e) { const custom = S.settings.mode === 'custom' || ['sPower', 'sTasks', 'sAutoTag', ...FEAT.map(x => x[1])].includes(e?.target?.id); // toggles only travel in Custom (a preset owns them otherwise)
-  sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked, teammates: $('sMates').checked, manualTag: $('sManualTag').checked, chimeVol: +$('sChimeVol').value,
+  sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked, teammates: $('sMates').checked, manualTag: $('sManualTag').checked, tagDebug: $('sTagDebug').checked, chimeVol: +$('sChimeVol').value,
   ...(custom ? { mode: 'custom', powerups: $('sPower').value, tasks: $('sTasks').value, autoTag: +$('sAutoTag').value, features: Object.fromEntries(FEAT.map(([f, id]) => [f, $(id).checked])) } : {}) } }); }
 // ---------- game modes (presets; Custom reveals the individual toggles) ----------
 const MODES = { classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.' }, party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.' },
@@ -376,7 +377,7 @@ function renderModes() {
 }
 for (const b of document.querySelectorAll('[data-mode]')) b.onclick = () => sendMsg({ type: 'settings', settings: { mode: b.dataset.mode } });
 $('sChimeVol').oninput = () => $('chimeVolLbl').textContent = $('sChimeVol').value + '%';
-for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sMates', 'sPower', 'sTasks', 'sAutoTag', 'sManualTag', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
+for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sMates', 'sPower', 'sTasks', 'sAutoTag', 'sManualTag', 'sTagDebug', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
 $('btnQuick').onclick = () => { $('sGame').value = 2; $('sPing').value = 10; $('sHide').value = 10; pushSettings(); toast('2-min test game: pings 10 s, bounty every 30 s, cam at 1:00, compass from 1:48'); };
 $('btnReadyCam').onclick = askCam;
 // host chime preview on every phone (lobby only): on slider release, or at most every 1.5 s while dragging
@@ -438,7 +439,8 @@ function ensureFieldMap() {
   fieldMap = window.fieldMap = L.map('fieldMap', { doubleClickZoom: false, tap: true }).setView(c, 15);
   baseLayer(fieldMap);
   fieldGroup = L.layerGroup().addTo(fieldMap); drawGroup = L.layerGroup().addTo(fieldMap);
-  fieldMap.on('click', e => { if (!drawing) return; if (drawing.length >= Field.MAX_POINTS) return toast(`Max ${Field.MAX_POINTS} points`); drawing.push([e.latlng.lat, e.latlng.lng]); renderDraw(); });
+  initFreehand();
+  fieldMap.on('click', e => { if (!drawing || drawMode !== 'corners') return; if (drawing.length >= Field.MAX_POINTS) return toast(`Max ${Field.MAX_POINTS} points`); drawing.push([e.latlng.lat, e.latlng.lng]); renderDraw(); });
   fieldKey = '';
 }
 function renderDraw() {
@@ -447,7 +449,9 @@ function renderDraw() {
   if (!drawing) return;
   if (drawing.length > 1) (drawing.length > 2 ? L.polygon : L.polyline)(drawing, { color: '#facc15', weight: 3, dashArray: '6', fillOpacity: .15, interactive: false }).addTo(drawGroup);
   drawing.forEach(p => L.circleMarker(p, { radius: 7, color: '#000', weight: 2, fillColor: '#facc15', fillOpacity: 1, interactive: false }).addTo(drawGroup));
-  $('drawCount').textContent = `${drawing.length} pt${drawing.length === 1 ? '' : 's'} — tap the map to add`;
+  $('drawCount').textContent = `${drawing.length} pt${drawing.length === 1 ? '' : 's'} · ${drawMode === 'corners' ? 'tap each corner; straight lines join them' : 'drag a finger around the area'}`;
+  $('modeCorners').classList.toggle('on', drawMode === 'corners'); $('modeFree').classList.toggle('on', drawMode === 'free');
+  $('modeCorners').setAttribute('aria-pressed', drawMode === 'corners'); $('modeFree').setAttribute('aria-pressed', drawMode === 'free');
   $('btnFinishDraw').disabled = drawing.length < 3;
 }
 function renderField() {
@@ -474,10 +478,27 @@ for (const b of document.querySelectorAll('#fieldRadius button')) b.onclick = ()
   setField({ ...curField(), circle: { lat: c.lat, lng: c.lng, r } });
 };
 $('btnCenterMe').onclick = () => { if (!myLoc) return toast('No GPS fix yet'); fieldMap.setView([myLoc.lat, myLoc.lng]); if (S.field?.circle) setField({ ...curField(), circle: { ...S.field.circle, lat: myLoc.lat, lng: myLoc.lng } }); else toast('Pick a radius to place a circle here'); };
-$('btnDraw').onclick = () => { drawing = []; renderField(); toast('Tap the map to add corners, then Finish'); };
+// v19 boundary drawing: "Tap corners" (default: tap points, straight lines, Undo last point, Close shape) or "Freehand" (drag; simplified to <= Field.MAX_POINTS)
+let drawMode = 'corners';
+function simplify(pts, max) { // Douglas-Peucker with a growing tolerance until it fits
+  const dp = (a, tol) => { if (a.length < 3) return a; const [x1, y1] = a[0], [x2, y2] = a[a.length - 1]; let iMax = 0, dMax = 0;
+    for (let i = 1; i < a.length - 1; i++) { const [x, y] = a[i], d = Math.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / (Math.hypot(y2 - y1, x2 - x1) || 1e-12); if (d > dMax) { dMax = d; iMax = i; } }
+    return dMax > tol ? [...dp(a.slice(0, iMax + 1), tol).slice(0, -1), ...dp(a.slice(iMax), tol)] : [a[0], a[a.length - 1]]; };
+  let tol = 0.00001, out = dp(pts, tol); while (out.length > max) { tol *= 1.6; out = dp(pts, tol); } return out;
+}
+function initFreehand() {
+  const el = fieldMap.getContainer(); let path = null;
+  el.addEventListener('pointerdown', e => { if (!drawing || drawMode !== 'free') return; e.preventDefault(); fieldMap.dragging.disable(); path = [fieldMap.mouseEventToLatLng(e)]; drawing = [[path[0].lat, path[0].lng]]; renderDraw(); el.setPointerCapture?.(e.pointerId); });
+  el.addEventListener('pointermove', e => { if (!path) return; const ll = fieldMap.mouseEventToLatLng(e); if (ll.distanceTo(path[path.length - 1]) < 6) return; path.push(ll); drawing = path.map(p => [p.lat, p.lng]); renderDraw(); });
+  const up = () => { if (!path) return; drawing = simplify(path.map(p => [p.lat, p.lng]), Field.MAX_POINTS); path = null; fieldMap.dragging.enable(); renderDraw(); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+}
+$('modeCorners').onclick = () => { drawMode = 'corners'; if (fieldMap) fieldMap.dragging.enable(); renderDraw(); };
+$('modeFree').onclick = () => { drawMode = 'free'; renderDraw(); toast('Drag a finger around the area, then Close shape'); };
+$('btnDraw').onclick = () => { drawing = []; drawMode = 'corners'; renderField(); toast('Tap each corner on the map, then Close shape'); };
 $('btnUndoPt').onclick = () => { drawing.pop(); renderDraw(); };
 $('btnClearPts').onclick = () => { drawing = []; renderDraw(); };
-$('btnFinishDraw').onclick = () => { if (drawing.length < 3) return toast('Need at least 3 points'); const poly = drawing; drawing = null; setField({ ...curField(), poly }); renderField(); };
+$('btnFinishDraw').onclick = () => { if (drawing.length < 3) return toast('Need at least 3 points'); const poly = drawing.slice(0, Field.MAX_POINTS); drawing = null; fieldMap?.dragging.enable(); setField({ ...curField(), poly }); renderField(); };
 $('btnRemoveShape').onclick = () => setField({ ...curField(), poly: null });
 
 // ---------- game ----------
@@ -860,7 +881,8 @@ function tagRing(m) {
   const e = $('tagRing'), p = Math.max(0, Math.min(1, +m.p || 0)), hunter = m.role === 'hunter';
   if (!p || !S || S.state !== 'playing') { e.classList.add('hidden'); tagRing.last = 0; return; }
   e.classList.remove('hidden'); e.className = hunter ? 'hunter' : 'hider';
-  e.style.setProperty('--p', p); $('tagPct').textContent = Math.round(p * 100) + '%';
-  $('tagTxt').textContent = hunter ? '🎯 Closing in… stay close' : '⚠️ A hunter is tagging you — move away!';
+  e.style.setProperty('--p', p); $('tagPct').textContent = m.paused ? '⏸' : Math.round(p * 100) + '%'; e.classList.toggle('paused', !!m.paused);
+  $('tagTxt').textContent = m.paused ? '📶 Paused: waiting for GPS… keep your screen on' : hunter ? '🎯 Closing in… stay close' : '⚠️ A hunter is tagging you — move away!';
+  const d = m.dbg; if (d) $('tagTxt').textContent += ` · 🛠 d ${(+d.d).toFixed(1)} m · ±${Math.round(d.accA)}/±${Math.round(d.accB)} m · lim ${(+d.lim).toFixed(1)} m · close ${Math.round(d.pct)}%`;
   if (!hunter && (!tagRing.last || Date.now() - tagRing.last > 2000)) { navigator.vibrate?.(80); tagRing.last = Date.now(); }
 }

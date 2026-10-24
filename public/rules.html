@@ -14,7 +14,7 @@ summary{cursor:pointer;font-weight:800;font-size:1.1em;padding:14px 0;list-style
 ul{padding-left:1.2em}li{margin:3px 0}
 </style></head><body>
 <header><a class="back" href="/" target="_top">← Back to Last Ping</a><h1>📖 How to play</h1><p class="sub">GPS hide &amp; seek in your phone's browser. Tap a section to open it.</p></header>
-<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#tasks">Tasks</a><a href="#autotag">Auto-tag</a><a href="#regroup">Regroup</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
+<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#tasks">Tasks</a><a href="#boundary">Boundary</a><a href="#autotag">Auto-tag</a><a href="#regroup">Regroup</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
 <main>
 <details id="goal" open><summary>🎯 Goal &amp; roles</summary>
 <p><b>Hiders 🙈</b> try to stay uncaught until the clock runs out. <b>Hunters 🔦</b> try to catch every hider first. The host picks roles (any number of hunters, at least one) or taps 🎲 Randomize.</p>
@@ -59,11 +59,16 @@ ul{padding-left:1.2em}li{margin:3px 0}
 <p>In Party and Chaos (or Custom with tasks on), hiders get about 3 short phone tasks per game (5 on “Often”). Your phone gives a short buzz and a <b>🧩 Task</b> button appears. You can hide the card with “✕ Later” and open it again until it expires (about a minute). The timer starts when you open it.</p>
 <ul><li><b>🧮 Quick math</b>: 3 sums in 15 s.</li><li><b>🧩 Slide puzzle</b>: put 1–8 in order (30 s).</li><li><b>🔌 Wire connect</b>: drag each wire to its colour (20 s).</li><li><b>🧘 Hold still</b>: stay within about 8 m for 20 s. The server checks this with your GPS.</li></ul>
 <p><b>Finish it</b>: Extra Time, so the game clock loses 30 s (scaled to game length). Hunters aren’t told when a task is completed.<br><b>Fail, run out of time or ignore it</b>: your next ping is <i>noisy</i>. It ignores your cloak or decoy and shows a tight accuracy circle.</p></details>
+<details id="boundary"><summary>🟨 Drawing the boundary</summary>
+<p>Host: tap <b>✏️ Draw shape</b>. In <b>📍 Tap corners</b> mode (the default), tap each corner. Straight lines join them. Use <b>↩ Undo last point</b> to fix a mistake, then <b>✅ Close shape</b>. <b>✍️ Freehand</b> lets you drag a finger around the area instead.</p></details>
 <details id="autotag"><summary>📍 Auto-tag</summary>
 <p>If a hunter stays within the tag radius of a hider (3 m by default; the host can pick 2 m for strong GPS only, 3 or 5 m, or turn it off) for about <b>10 seconds in a row</b>, the server tags the hider automatically.</p>
 <ul><li>Both phones show a ring that fills up. The hider sees “A hunter is tagging you”. The hunter only sees “Closing in…”, with no direction, distance or name.</li>
-<li>Step out of range and the tag breaks. The ring resets after about 1.5 s.</li><li>Walking past doesn’t count. It needs continuous contact confirmed by more than one GPS update.</li>
-<li>Weak GPS needs longer and closer contact, up to about 20 s. With very poor accuracy (worse than ±30 m), auto-tag pauses and you use the manual buttons.</li>
+<li>Stand side by side and the tag usually lands in about 10–15 s. The server smooths each phone’s last few GPS fixes and allows for GPS accuracy (range + half of both phones’ accuracy, capped), and the ring keeps filling while most of the last 10 s counted as close. A 3 m/s jog-by or walking past 10 m away never tags.</li>
+<li>Clearly move apart (more than about 15 m for 3 s) and the ring resets. If a phone’s GPS goes quiet for a moment (up to about 8 s), the ring <b>pauses</b> (⏸) instead of resetting.</li>
+<li>While a tag is in progress, both phones send GPS every second. Keep the screen on and the app open.</li>
+<li>If the hider’s GPS stays quiet after the ring passed 30%, the hunter gets a <b>Tap to confirm tag</b> button. The hider is asked “Were you tagged?”. If they don’t answer within 15 s, the host decides.</li><li>Walking past doesn’t count. It needs continuous contact confirmed by more than one GPS update.</li>
+<li>With very poor accuracy (worse than about ±25 m), auto-tag pauses and you use the manual buttons.</li>
 <li>The host can keep or remove the manual <b>Catch / I got caught</b> buttons as a fallback. The host can always confirm a catch.</li></ul></details>
 <details id="regroup"><summary>📍 Regroup after a round</summary>
 <p>When a round ends, the recap shows a <b>Regroup</b> panel. Everyone sees the room creator’s live position as a “Meet here” pin, how far away they are, and a <b>Head back to host</b> button that opens walking directions. If the creator has left, the current host is the meeting point. This only happens after the round. During a game, nothing changes.</p>
@@ -71,8 +76,9 @@ ul{padding-left:1.2em}li{margin:3px 0}
 <li>The host sees who’s coming back, who’s done and who hasn’t answered, plus each player’s distance, whether they’re getting closer or moving away, and whether their connection dropped. Then they tap <b>Start next round</b> for the players who are in.</li>
 <li>Optional: <b>🔔 Ping me for the next game</b> with your @ or an email.</li></ul></details>
 <details id="power"><summary>🎁 Power-ups</summary>
+<p>Drops land on walkable ground (streets, paths and footways from OpenStreetMap, never motorways, never inside buildings). If map data isn’t available, they land at a random spot in the field.</p>
 <p><b>Drops</b> appear every <span class="v" data-v="dropEveryMin">3</span> min (host setting: Off / Normal / Chaos = every <span class="v" data-v="chaosEverySec">90</span> s), alternating hider drops and hunter drops — none in the first <span class="v" data-v="noDropsFirstMin">2</span> min or in sudden death. They spawn <span class="v" data-v="dropMinM">50</span>–<span class="v" data-v="dropMaxM">200</span> m from a player, inside the field, and vanish after <span class="v" data-v="dropTtlMin">2.5</span> min.</p>
-<ul><li>🎁 <b>Hider drops</b> are visible only to hiders. ⚡ <b>Hunter drops</b> are visible to everyone.</li>
+<ul><li>🎁 <b>Hider drops</b>: only hiders can pick them up. Hunters see where they are as a dimmed icon (not what’s inside), so they’re a place hiders might head for. When one is taken it just disappears. ⚡ <b>Hunter drops</b> are visible to everyone.</li>
 <li><b>Pick up:</b> stand within <span class="v" data-v="pickupM">15</span> m for <span class="v" data-v="pickupSec">5</span> s (watch the ring; walking away resets it).</li>
 <li>Hold <b>one</b> at a time; tap to use. <span class="v" data-v="cooldownMin">3</span>-min cooldown between uses. Not usable in sudden death.</li>
 <li><b>Stealing:</b> a hider can destroy a hunter drop the same way — but the spot flashes for everyone and that hider is instantly pinged to the hunters at their real location.</li>

@@ -52,7 +52,8 @@
         <button class="small" data-r="0">No boundary</button><button class="small" data-r="402">0.25 mi</button><button class="small" data-r="805">0.5 mi</button><button class="small" data-r="1609">1 mi</button>
       </div>
       <div class="seg"><button id="btnCenterMe" class="small">📍 Center on me</button><button id="btnDraw" class="small">✏️ Draw shape</button><button id="btnRemoveShape" class="small hidden">🗑 Remove shape</button></div>
-      <div id="drawBar" class="seg hidden"><button id="btnUndoPt" class="small">↩ Undo point</button><button id="btnClearPts" class="small">Clear</button><button id="btnFinishDraw" class="small primary">✅ Finish</button><span id="drawCount" class="note"></span></div>
+      <div id="drawBar" class="hidden"><div class="seg drawModes" role="radiogroup" aria-label="Drawing mode"><button id="modeCorners" class="small on" aria-pressed="true">📍 Tap corners</button><button id="modeFree" class="small" aria-pressed="false">✍️ Freehand</button></div>
+      <div class="seg"><button id="btnUndoPt" class="small">↩ Undo last point</button><button id="btnClearPts" class="small">Clear</button><button id="btnFinishDraw" class="small primary">✅ Close shape</button></div><span id="drawCount" class="note"></span></div>
       <p class="note" id="fieldHelp">Pick a circle (drag the 📍 pin to move it) and/or draw a shape. With both, the field is the area inside both.</p>
     </div>
   </div>
@@ -70,6 +71,7 @@
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
     <label class="chk"><input id="sMates" type="checkbox" checked> Teammates visible (hiders see fellow hiders live)</label>
     <label class="chk"><input id="sManualTag" type="checkbox" checked> Manual tag buttons (Catch / I got caught) as a fallback</label>
+    <label class="chk"><input id="sTagDebug" type="checkbox"> 🛠 Tag debug overlay (host only: distance, accuracy, close %)</label>
     <div id="customBox" class="hidden">
     <label>🎁 Power-up drops<select id="sPower"><option value="off">Off</option><option value="normal">Normal (every 3 min)</option><option value="chaos">Chaos (every 90 s)</option></select></label>
     <label>🧩 Hider tasks<select id="sTasks"><option value="off">Off</option><option value="normal">Normal (~3 per game)</option><option value="often">Often (~5 per game)</option></select></label>
@@ -222,6 +224,9 @@
 <div id="coach" class="coach" role="status" aria-live="polite"><span id="coachTxt"></span><button id="coachX" aria-label="Dismiss tip">✕</button></div>
 <div id="toast" class="toast"></div>
 <div id="tagRing" class="hidden" aria-live="polite"><div class="tr"><span id="tagPct"></span></div><b id="tagTxt"></b></div>
+<button id="tagFbBtn" class="hidden">✅ Tap to confirm tag <small id="tagFbLeft"></small></button>
+<div id="tagAsk" class="tagModal hidden" role="alertdialog" aria-labelledby="tagAskQ"><b id="tagAskQ">Were you tagged?</b><p id="tagAskBy" class="note"></p><div class="seg"><button id="tagAskYes" class="primary">Yes, I was tagged</button><button id="tagAskNo">No</button></div><small id="tagAskLeft" class="note"></small></div>
+<div id="tagHostAsk" class="tagModal hidden" role="alertdialog"><b>Confirm a tag?</b><p id="tagHostTxt" class="note"></p><div class="seg"><button id="tagHostYes" class="primary">Confirm tag</button><button id="tagHostNo">Not tagged</button></div></div>
 <button id="taskPill" class="hidden" aria-label="Open task">🧩 Task</button>
 <div id="taskCard" class="hidden" role="dialog" aria-label="Task"><div class="sheetHead"><b id="taskTitle">Task</b><span id="taskTime" class="tkTime"></span><button id="taskClose" class="small" aria-label="Hide task">✕ Later</button></div>
 <div class="tkBarW"><div id="taskBar" class="tkBar"></div></div><p id="taskHint" class="note"></p><div id="taskBody"></div></div>
@@ -252,4 +257,5 @@
 <script src="reel.js"></script>
 <script src="plan.js"></script>
 <script src="tasks_ui.js"></script>
-<script src="regroup.js"></script></body></html>
+<script src="regroup.js"></script>
+<script src="tagfx.js"></script></body></html>

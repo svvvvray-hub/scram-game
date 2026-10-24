@@ -299,3 +299,10 @@ body:has(#taskCard:not(.hidden)) #toast{pointer-events:none}
 .rgNotify{margin-top:12px;background:#1f212b;border-radius:12px;padding:10px}.rgNotify summary{font-weight:700;cursor:pointer;min-height:32px}
 .rgNotify > *:not(summary){margin-top:8px}.rgNKind{display:flex;gap:6px}.rgNKind button.on{background:#7c5cff;color:#fff}
 #rgNEmailIn,#rgNHandle{font:inherit;padding:10px;border-radius:10px;border:1px solid #444;background:#222;color:#fff;width:100%;box-sizing:border-box}#rgNSave{width:100%;min-height:46px}
+/* v19 tag reliability */
+#tagRing.paused{--c:#8a8f98}#tagRing.paused .tr span{font-size:26px}
+#tagFbBtn{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 210px);z-index:1350;background:#30a46c;color:#fff;border:0;border-radius:16px;padding:14px 20px;font-size:18px;font-weight:800;box-shadow:0 6px 20px #000a;min-height:56px}
+#tagFbBtn:disabled{background:#3a3d48}#tagFbBtn small{opacity:.8;font-weight:600}
+.tagModal{position:fixed;left:12px;right:12px;top:30%;z-index:1400;background:#15161c;color:#fff;border:2px solid #e5484d;border-radius:18px;padding:16px;box-shadow:0 10px 40px #000c;max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.tagModal b{font-size:20px}.tagModal .seg{display:flex;gap:8px}.tagModal .seg button{flex:1;min-height:52px;font-size:16px}
+#drawBar{display:flex;flex-direction:column;gap:6px}#drawBar.hidden{display:none}.drawModes button.on{background:#facc15;color:#000;font-weight:800}

@@ -63,7 +63,7 @@ const T0 = Date.now();
   // 1) hider drop -> only hiders see it; Ana picks it up (5 s scaled = 1 s) and uses Hunter Radar
   await ana.page.waitForFunction(() => (S.drops || []).some(d => d.side === 'hider'), null, { timeout: 30000 });
   const hd = await ana.page.evaluate(() => S.drops.find(d => d.side === 'hider'));
-  check(!murray.frames.some(f => JSON.stringify(f).includes(hd.id)), 'hider drop never sent to the hunter');
+  await murray.page.waitForFunction(id => (S.drops || []).some(d => d.id === id && d.locked && !d.ptype), hd.id, { timeout: 5000 }).then(() => check(true, 'hunter sees the hider drop (dimmed, locked, no type)'), () => check(false, 'hunter sees the hider drop (dimmed, locked, no type)'));
   check(await bob.page.evaluate(id => S.drops.some(d => d.id === id), hd.id), 'other hider sees it too');
   await sleep(500); await ana.page.screenshot({ path: 'shots/powerup_drop_hider.png' });
   await ana.ctx.setGeolocation({ latitude: hd.lat + 0.00003, longitude: hd.lng, accuracy: 5 });
