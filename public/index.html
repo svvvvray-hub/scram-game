@@ -71,6 +71,7 @@
     <label class="chk"><input id="sMates" type="checkbox" checked> Teammates visible (hiders see fellow hiders live)</label>
     <div id="customBox" class="hidden">
     <label>🎁 Power-up drops<select id="sPower"><option value="off">Off</option><option value="normal">Normal (every 3 min)</option><option value="chaos">Chaos (every 90 s)</option></select></label>
+    <label>🧩 Hider tasks<select id="sTasks"><option value="off">Off</option><option value="normal">Normal (~3 per game)</option><option value="often">Often (~5 per game)</option></select></label>
     </div>
     <label>🔔 Chime volume <span id="chimeVolLbl">25%</span><input id="sChimeVol" type="range" min="10" max="100" step="5" value="25"></label>
     <div class="seg"><button id="btnChimeAll" class="small">🔔 Test chime on all phones</button> <span id="chimeTally" class="note"></span></div>
@@ -189,6 +190,9 @@
 <div id="reveal" class="hidden" aria-live="assertive"><canvas id="rvRadar"></canvas><div id="rvPulse"></div><div id="rvStage"></div><button id="rvSkip" class="hidden">Skip</button></div>
 <div id="coach" class="coach" role="status" aria-live="polite"><span id="coachTxt"></span><button id="coachX" aria-label="Dismiss tip">✕</button></div>
 <div id="toast" class="toast"></div>
+<button id="taskPill" class="hidden" aria-label="Open task">🧩 Task</button>
+<div id="taskCard" class="hidden" role="dialog" aria-label="Task"><div class="sheetHead"><b id="taskTitle">Task</b><span id="taskTime" class="tkTime"></span><button id="taskClose" class="small" aria-label="Hide task">✕ Later</button></div>
+<div class="tkBarW"><div id="taskBar" class="tkBar"></div></div><p id="taskHint" class="note"></p><div id="taskBody"></div></div>
 <div id="chimeFlash" class="hidden"></div>
 <div id="recPreview" class="hidden"><video id="recVid" muted playsinline autoplay></video><video id="recPip" class="hidden" muted playsinline autoplay></video></div>
 <div id="bubbleHit" class="hidden" title="Tap to swap camera / map, drag to move"></div>
@@ -214,4 +218,5 @@
 <script src="record.js"></script>
 <script src="recapui.js"></script>
 <script src="reel.js"></script>
-<script src="plan.js"></script></body></html>
+<script src="plan.js"></script>
+<script src="tasks_ui.js"></script></body></html>

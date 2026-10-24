@@ -9,6 +9,7 @@ const Field = require('./public/field');
 const Recap = require('./public/recap');
 const Socials = require('./public/socials');
 const PU = require('./powerups');
+const Tasks = require('./tasks');
 const { createStats, normHandle } = require('./stats');
 const { createSupabaseStore } = require('./supabase');
 const Admin = require('./admin');
@@ -38,9 +39,9 @@ function makeCode(lobbies) {
 const FEATURES = ['decoy', 'chime', 'bounty', 'cam', 'compass'];
 // Game modes: presets over the individual toggles. Pings, the field and catch confirmation are always on.
 const MODES = {
-  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off' },
-  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal' },
-  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos' },
+  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off', tasks: 'off' },
+  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal', tasks: 'normal' },
+  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos', tasks: 'normal' },
   custom: { label: 'Custom', desc: 'Pick every toggle yourself.' },
 };
 const DEFAULT_GAME_SEC = clampNum0(process.env.GAME_MIN, 0.5, 360, 20) * 60; // dev/test: GAME_MIN=2 node server.js
@@ -166,7 +167,7 @@ function createApp(opts = {}) {
     const code = makeCode(lobbies);
     const L = {
       code, createdAt: now(), hostId: null, players: new Map(), state: 'lobby',
-      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, teammates: true, powerups: 'normal', chimeVol: 25,
+      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, teammates: true, powerups: 'normal', tasks: 'off', chimeVol: 25,
         features: Object.fromEntries(FEATURES.map(f => [f, true])), mode: 'custom' },
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
@@ -178,7 +179,7 @@ function createApp(opts = {}) {
     return L;
   }
 
-  function applyMode(st, mode) { const M = MODES[mode]; if (!M) return; st.mode = mode; if (M.features) { st.features = { ...M.features }; st.powerups = M.powerups; } }
+  function applyMode(st, mode) { const M = MODES[mode]; if (!M) return; st.mode = mode; if (M.features) { st.features = { ...M.features }; st.powerups = M.powerups; st.tasks = M.tasks; } }
   // {social:{handle,platform}} or legacy {ig, platform?} -> normalized social or null
   const socialIn = m => Socials.norm(m.social && typeof m.social === 'object' ? m.social : { handle: m.ig, platform: m.platform });
   function addPlayer(L, name, social) {
@@ -232,6 +233,7 @@ function createApp(opts = {}) {
       if (isHunter(me)) v.jamUntil = L.jamUntil;
     } v.hlCount = L.highlights.size; v.hlMine = L.highlights.has(me.id);
     if (L.bounty && L.settings.features.bounty) v.bounty = { id: L.bounty.id, lat: L.bounty.lat, lng: L.bounty.lng, t: L.bounty.t, radius: 15 };
+    if (me.role === 'hider' && !me.caught && me.task) v.task = Tasks.pub(me.task); // only ever to the hider it belongs to
     if (me.role === 'hider') { v.decoys = me.decoys; v.decoyArmed = me.decoyArmed; v.cloaked = me.wipeNext; }
     if (isHunter(me) && L.state !== 'lobby') v.photos = Object.fromEntries(Object.entries(L.photos).map(([id, ph]) => [id, { name: ph.name, pending: ph.pending, unavailable: ph.unavailable, has: !!ph.data }])); // hunters only; image bytes go via camPeek
     if (isHunter(me) && L.state === 'playing' || ended) {
@@ -334,11 +336,12 @@ function createApp(opts = {}) {
     const hunters = [...L.players.values()].filter(p => isHunter(p) && p.loc);
     const truth = scheduled && L.truthNext; if (truth) L.truthNext = false; // Truth Ping: ignore decoys and wipes this ping
     for (const h of activeHiders(L)) {
-      if (scheduled && !final && !truth && h.wipeNext && !h.oobReveal) { h.wipeNext = false; locs[h.id] = null; hidden.push(h.id); continue; }
+      const noisy = scheduled && h.noisy; if (noisy) h.noisy = false; // failed/ignored task: this ping ignores cloak/decoy and is tight
+      if (scheduled && !final && !truth && !noisy && h.wipeNext && !h.oobReveal) { h.wipeNext = false; locs[h.id] = null; hidden.push(h.id); continue; }
       if (!h.loc) { locs[h.id] = null; continue; }
       let pos = { lat: h.loc.lat, lng: h.loc.lng };
-      if (scheduled && !final && !truth && h.decoyArmed && !h.oobReveal) { h.decoyArmed = false; pos = offsetM(pos, rnd(30, 150), rnd(0, 360)); decoys.push(h.id); }
-      locs[h.id] = { lat: pos.lat, lng: pos.lng, acc: h.loc.acc, ts: h.loc.ts, age: t - h.loc.recvAt }; h.revealedAt = t;
+      if (scheduled && !final && !truth && !noisy && h.decoyArmed && !h.oobReveal) { h.decoyArmed = false; pos = offsetM(pos, rnd(30, 150), rnd(0, 360)); decoys.push(h.id); }
+      locs[h.id] = { lat: pos.lat, lng: pos.lng, acc: noisy ? Math.min(h.loc.acc, 10) : h.loc.acc, ts: h.loc.ts, age: t - h.loc.recvAt }; h.revealedAt = t;
       if (scheduled && !final && F.chime && !h.silent && hunters.some(x => distM(x.loc, h.loc) <= 40)) chimed.push(h);
     }
     L.pings.push({ t, locs, out: !scheduled, decoys, hidden, truth });
@@ -449,7 +452,7 @@ function createApp(opts = {}) {
           for (const p of L.players.values()) tryClaim(L, p);
           broadcast(L);
         }
-        tickPowerups(L);
+        tickPowerups(L); tickTasks(L);
         if (F.cam && L.camAt && t >= L.camAt) { L.camAt = 0; requestPhotos(L); broadcast(L); }
         if (L.camDeadline && t >= L.camDeadline) { expirePhotos(L); broadcast(L); }
       }
@@ -465,6 +468,7 @@ function createApp(opts = {}) {
     for (const [pid, c] of L.catches) if (c.hiderId === h.id) L.catches.delete(pid);
     event(L, `${h.name} was caught${by ? ' by ' + by.name : ''}`);
     logEv(L, 'catch', { id: h.id, by: by ? by.id : null }, `🎯 ${by ? by.name + ' caught ' + h.name : h.name + ' was caught'}`);
+    h.task = null; h.noisy = false;
     if (L.settings.caughtBecomeHunter) { h.role = 'hunter'; send(h.ws, { type: 'infected' }); }
     trail(L, h, true);
     if (activeHiders(L).length === 0) endGame(L, 'hunters'); else broadcast(L);
@@ -616,10 +620,53 @@ function createApp(opts = {}) {
     broadcast(L); return true;
   }
 
+  // ---- v16 hider mini-tasks ----
+  const TASKS_PER_GAME = { off: 0, normal: 3, often: 5 };
+  const taskWindow = L => opts.taskWindowMs ?? Math.max(25000, 60000 * scale(L)); // time to open it before it expires
+  const taskBonus = L => 30 * sc(L);
+  function scheduleTasks(L) { // spaced out over the hunt, before sudden death
+    const n = TASKS_PER_GAME[L.settings.tasks] || 0, g = L.settings.gameSec * 1000; L.taskTimes = []; L.taskIdx = 0;
+    const last = (L.settings.features.compass ? L.compassAt : L.endsAt) - taskWindow(L) - 25000;
+    for (let k = 0; k < n; k++) { const at = L.hideEndsAt + g * (0.1 + 0.7 * (k + 0.2 + 0.6 * Math.random()) / n); if (at < last) L.taskTimes.push(Math.round(at)); }
+    const tt = opts.taskTimes || (env.SCRAM_TEST_TASK_AT ? env.SCRAM_TEST_TASK_AT.split(',').map(Number) : null);
+    if (tt) L.taskTimes = tt.map(d => L.hideEndsAt + d); // test hook
+  }
+  function offerTask(L, h, type) {
+    const k = Tasks.make(type || opts.taskType || (env.SCRAM_TEST_TASK ? env.SCRAM_TEST_TASK.split(',')[(L.taskIdx - 1) % env.SCRAM_TEST_TASK.split(',').length] : undefined)); k.offeredAt = now(); k.expiresAt = k.offeredAt + taskWindow(L); h.task = k;
+    send(h.ws, { type: 'taskOffer', task: Tasks.pub(k) }); send(h.ws, viewFor(L, h));
+  }
+  function finishTask(L, h, ok, reason) {
+    const k = h.task; if (!k) return; h.task = null;
+    if (ok) {
+      const d = Math.max(0, Math.min(taskBonus(L), (L.settings.features.compass ? L.compassAt : L.endsAt) - now() - 1000)); L.endsAt -= d; if (L.compassAt) L.compassAt -= d;
+      logEv(L, 'task', { id: h.id, ok: true, kind: k.type }, `🧩 ${h.name} completed a task (−${Math.round(d / 1000)} s)`);
+      event(L, '🧩 A hider completed a task!');
+      send(h.ws, { type: 'taskResult', ok: true, kind: k.type, bonusSec: Math.round(d / 1000) });
+      for (const p of L.players.values()) if (isHunter(p)) send(p.ws, { type: 'taskDone' }); // no name, no location
+      broadcast(L);
+    } else {
+      h.noisy = true; logEv(L, 'task', { id: h.id, ok: false, kind: k.type }, `🧩 ${h.name} ${reason === 'expired' ? 'ignored' : 'failed'} a task`);
+      send(h.ws, { type: 'taskResult', ok: false, kind: k.type, reason }); send(h.ws, viewFor(L, h));
+    }
+  }
+  function holdFix(L, h) { const k = h.task; if (!k || k.type !== 'hold' || !k.startedAt || h.role !== 'hider') return;
+    const pt = { lat: h.loc.lat, lng: h.loc.lng };
+    if (!k.start) { k.start = pt; k.fixes = 1; return; }
+    k.fixes++; k.maxD = Math.max(k.maxD, distM(k.start, pt));
+    if (k.maxD > Tasks.HOLD_R + Math.min(10, (h.loc.acc || 0) / 4)) finishTask(L, h, false, 'moved'); }
+  function tickTasks(L) {
+    const t = now();
+    if (L.taskIdx < (L.taskTimes || []).length && t >= L.taskTimes[L.taskIdx] && !inCompass(L)) { L.taskIdx++;
+      for (const h of activeHiders(L)) if (!h.task) offerTask(L, h); }
+    for (const h of activeHiders(L)) { const k = h.task; if (!k) continue;
+      if (k.type === 'hold' && k.startedAt) { if (t >= k.startedAt + k.limitMs) finishTask(L, h, k.start && k.fixes >= 3 && k.maxD <= Tasks.HOLD_R + 10, 'moved'); else if (t > k.startedAt + k.limitMs + Tasks.GRACE) finishTask(L, h, false, 'timeout'); continue; }
+      if (k.startedAt && t > k.startedAt + k.limitMs + Tasks.GRACE) finishTask(L, h, false, 'timeout');
+      else if (!k.startedAt && t > k.expiresAt) finishTask(L, h, false, 'expired'); }
+  }
   function resetFeatures(L, ps) {
     L.bounty = null; L.photos = {}; L.camAt = L.compassAt = L.nextBountyAt = L.nextCompassAt = L.camDeadline = 0; L.compassAnnounced = false;
-    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; }
-    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null;
+    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; p.task = null; p.noisy = false; }
+    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null; L.taskTimes = []; L.taskIdx = 0;
   }
   function rematch(L) {
     if (L.state !== 'ended') return;
@@ -705,7 +752,7 @@ function createApp(opts = {}) {
           if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return; // (0,0) = "null island" bogus fix
           const first = !me.loc, ts = Number(m.ts), tn = now();
           me.loc = { lat, lng, acc: clampNum(m.acc, 0, 1e5, 999), ts: Number.isFinite(ts) && Math.abs(ts - tn) < 864e5 ? ts : tn, recvAt: tn };
-          trail(L, me);
+          trail(L, me); holdFix(L, me);
           if (L.state === 'playing' && L.drops.size) checkPickups(L);
           // Only hunters' live positions are pushed; hider updates trigger no broadcast with coords.
           const of = outFlag(L, me), ofChanged = of !== me.lastOut; me.lastOut = of;
@@ -720,6 +767,11 @@ function createApp(opts = {}) {
           if ((host || env.PLAN_ANYONE === '1') && polls.get(c)) { L.plan = { code: c, by: me.name }; for (const p of L.players.values()) send(p.ws, { type: 'plan', ...L.plan }); } break; }
         case 'ig': case 'social': me.social = socialIn(m); L.recapCache = null; if (me.social && (me.socialN = (me.socialN || 0) + 1) <= 10) stats.handle(me.social); // cap stored handles per player if (L.state === 'lobby' || L.state === 'ended') broadcast(L); break;
         case 'perm': me.perm = ['granted', 'denied', 'prompt', 'unsupported', 'error'].includes(m.perm) ? m.perm : 'unknown'; broadcast(L); break;
+        case 'taskStart': { const k = me.task; if (!k || k.id !== m.id || me.role !== 'hider' || me.caught || L.state !== 'playing') break;
+          if (!k.startedAt) { k.startedAt = now(); if (k.type === 'hold') { k.start = null; k.fixes = 0; k.maxD = 0; send(ws, { type: 'need_fix', at: now() }); } }
+          send(ws, viewFor(L, me)); break; }
+        case 'taskSubmit': { const k = me.task; if (!k || k.id !== m.id || !k.startedAt || k.type === 'hold') break;
+          finishTask(L, me, Tasks.check(k, m.answer) && now() <= k.startedAt + k.limitMs + Tasks.GRACE, 'wrong'); break; }
         case 'settings': if (host && L.state === 'lobby') {
           const s = m.settings || {};
           L.settings.gameSec = clampNum(s.gameSec, minSec * 2, 6 * 3600, L.settings.gameSec);
@@ -729,10 +781,11 @@ function createApp(opts = {}) {
           if ('showRevealed' in s) L.settings.showRevealed = !!s.showRevealed;
           if ('teammates' in s) L.settings.teammates = !!s.teammates;
           if (['off', 'normal', 'chaos'].includes(s.powerups)) L.settings.powerups = s.powerups;
+          if (['off', 'normal', 'often'].includes(s.tasks)) L.settings.tasks = s.tasks;
           if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];
           if (s.mode && MODES[s.mode] && s.mode !== 'custom') applyMode(L.settings, s.mode); // a preset wins over the individual toggles
-          else { const M = MODES[L.settings.mode]; if (s.mode === 'custom' || (M?.features && (L.settings.powerups !== M.powerups || FEATURES.some(f => L.settings.features[f] !== M.features[f])))) L.settings.mode = 'custom'; }
+          else { const M = MODES[L.settings.mode]; if (s.mode === 'custom' || (M?.features && (L.settings.powerups !== M.powerups || L.settings.tasks !== M.tasks || FEATURES.some(f => L.settings.features[f] !== M.features[f])))) L.settings.mode = 'custom'; }
           broadcast(L);
         } break;
         case 'field': if (host && (L.state === 'lobby' || L.state === 'ended')) {
@@ -765,7 +818,7 @@ function createApp(opts = {}) {
           resetFeatures(L, ps); clearRound(L);
           { const sc = scale(L) * 1000, h = L.hideEndsAt;
             L.nextBountyAt = h + 300 * sc; L.camAt = h + 600 * sc; L.compassAt = h + 1080 * sc; L.nextCompassAt = 0; }
-          scheduleDrops(L);
+          scheduleDrops(L); scheduleTasks(L);
           if (L.state === 'playing') L.nextPingAt = t + L.settings.pingSec * 1000;
           else L.nextPingAt = L.hideEndsAt + L.settings.pingSec * 1000;
           event(L, L.state === 'hiding' ? 'Hiders, go hide!' : 'Hunt is on!'); logEv(L, 'start', {}, L.state === 'hiding' ? '🙈 Head start — hiders go hide' : '🔦 Hunt is on');

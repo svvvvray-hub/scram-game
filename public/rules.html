@@ -14,7 +14,7 @@ summary{cursor:pointer;font-weight:800;font-size:1.1em;padding:14px 0;list-style
 ul{padding-left:1.2em}li{margin:3px 0}
 </style></head><body>
 <header><a class="back" href="/" target="_top">← Back to Last Ping</a><h1>📖 How to play</h1><p class="sub">GPS hide &amp; seek in your phone's browser. Tap a section to open it.</p></header>
-<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
+<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#tasks">Tasks</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
 <main>
 <details id="goal" open><summary>🎯 Goal &amp; roles</summary>
 <p><b>Hiders 🙈</b> try to stay uncaught until the clock runs out. <b>Hunters 🔦</b> try to catch every hider first. The host picks roles (any number of hunters, at least one) or taps 🎲 Randomize.</p>
@@ -55,6 +55,10 @@ ul{padding-left:1.2em}li{margin:3px 0}
 
 <details id="bounty"><summary>💰 Bounties</summary><p>Every <span class="v" data-v="bountyEveryMin">5</span> min a 💰 appears on everyone's map. Get within <span class="v" data-v="bountyRadiusM">15</span> m to claim it. A hider who claims it wipes their next ping (hunters see nothing). A hunter who claims it triggers an instant surprise ping of every hider.</p></details>
 
+<details id="tasks"><summary>🧩 Hider tasks</summary>
+<p>In Party and Chaos (or Custom with tasks on), hiders get about 3 short phone tasks per game (5 on “Often”). Your phone gives a short buzz and a <b>🧩 Task</b> button appears. You can hide the card with “✕ Later” and open it again until it expires (about a minute). The timer starts when you open it.</p>
+<ul><li><b>🧮 Quick math</b>: 3 sums in 15 s.</li><li><b>🧩 Slide puzzle</b>: put 1–8 in order (30 s).</li><li><b>🔌 Wire connect</b>: drag each wire to its colour (20 s).</li><li><b>🧘 Hold still</b>: stay within about 8 m for 20 s. The server checks this with your GPS.</li></ul>
+<p><b>Finish it</b>: Extra Time, so the game clock loses 30 s (scaled to game length). Hunters see “A hider completed a task!” but not who did it or where.<br><b>Fail, run out of time or ignore it</b>: your next ping is <i>noisy</i>. It ignores your cloak or decoy and shows a tight accuracy circle.</p></details>
 <details id="power"><summary>🎁 Power-ups</summary>
 <p><b>Drops</b> appear every <span class="v" data-v="dropEveryMin">3</span> min (host setting: Off / Normal / Chaos = every <span class="v" data-v="chaosEverySec">90</span> s), alternating hider drops and hunter drops — none in the first <span class="v" data-v="noDropsFirstMin">2</span> min or in sudden death. They spawn <span class="v" data-v="dropMinM">50</span>–<span class="v" data-v="dropMaxM">200</span> m from a player, inside the field, and vanish after <span class="v" data-v="dropTtlMin">2.5</span> min.</p>
 <ul><li>🎁 <b>Hider drops</b> are visible only to hiders. ⚡ <b>Hunter drops</b> are visible to everyone.</li>

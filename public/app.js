@@ -74,6 +74,7 @@ function handle(m) {
   else if (m.type === 'error') { if (m.busy) { $('busyMsg').textContent = m.error; $('busyMsg').classList.remove('hidden'); } else toast(m.error, 4000); if (m.reset) { sess = null; localStorage.removeItem('scram'); show('home'); } }
   else if (m.type === 'left') { resetLocal(); toast('You left the lobby'); }
   else if (m.type === 'gone') { toast(m.kicked ? 'Removed from lobby' : 'Lobby closed'); sess = null; S = null; localStorage.removeItem('scram'); show('home'); }
+  else if (window.TaskUI && TaskUI.onMsg(m)) { /* v16 tasks */ }
   else if (m.type === 'need_fix') freshFix();
   else if (m.type === 'ping') { onPingFx(m); if (m.locs) { nearestId = m.nearest || null; toast(`📡 Ping #${m.n}: hider locations updated`); if (S && S.state === 'playing') { S.last = S.last || {}; for (const [id, l] of Object.entries(m.locs)) if (l) S.last[id] = { ...l, t: m.t }; for (const id of m.hidden || []) delete S.last[id]; S.pingCount = m.n; render(); } } else if (S && me()?.role === 'hider') { toast(m.out ? `💰 Surprise ping — a hunter grabbed the bounty and saw you!` : `📡 Ping #${m.n} — hunters just saw your location!`, 4000); navigator.vibrate?.(300); } }
   else if (m.type === 'chime') { playChime(); toast(m.sonar ? '🔊 Sonar made you chime! A hunter is within 75 m' : '🔔 You chimed! A hunter is within 40 m', 5000); fx('🔔 You chimed at the last ping — a hunter is close!'); coach('chime'); }
@@ -100,7 +101,7 @@ function handle(m) {
   else if (m.type === 'compass') { compassData = m; renderCompass(); }
   else if (m.type === 'startBlocked') { const names = m.outside.map(o => o.name + (o.noGps ? ' (no GPS)' : '')).join(', '); if (confirm(`Outside the playing field: ${names}. Start anyway?`)) sendMsg({ type: 'start', force: true }); else toast('Outside: ' + names, 5000); }
   else if (m.type === 'time') onTime(m);
-  else if (m.type === 'state') { offset = syncedOffset ?? (m.serverNow - Date.now()); if (m.revealAt && m.revealAt !== (S && S.revealAt) && m.revealAt > m.serverNow) timeSync(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); }
+  else if (m.type === 'state') { offset = syncedOffset ?? (m.serverNow - Date.now()); if (m.revealAt && m.revealAt !== (S && S.revealAt) && m.revealAt > m.serverNow) timeSync(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); window.TaskUI?.onState(S); }
 }
 const me = () => S && S.players.find(p => p.id === S.you);
 const PU_INFO = { radar: ['📡', 'Hunter Radar'], jammer: ['📵', 'Jammer'], silent: ['🤫', 'Silent Shoes'], shield: ['🛡️', 'Shield'], extraTime: ['⏩', 'Extra Time'], revive: ['💖', 'Revive'],
@@ -183,7 +184,7 @@ function enemyPts() { const m = me(); if (!S || !m) return []; if (m.role === 'h
 function maybeSend(force = false) {
   if (!myLoc) return;
   const running = !!S && (S.state === 'playing' || S.state === 'hiding');
-  const d = GpsThrottle.decide({ now: Date.now(), loc: myLoc, last: lastSent, enemies: running ? enemyPts() : [], hot: running ? [...(S.drops || []), ...(S.bounty ? [S.bounty] : [])] : [], urgent: running && !!(S.compass || S.pu?.pickup), force });
+  const d = GpsThrottle.decide({ now: Date.now(), loc: myLoc, last: lastSent, enemies: running ? enemyPts() : [], hot: running ? [...(S.drops || []), ...(S.bounty ? [S.bounty] : [])] : [], urgent: running && !!(S.compass || S.pu?.pickup || window.taskHold), force });
   saverOn = running && d.saver; window.gpsSaver = saverOn; $('saverPill').classList.toggle('hidden', !saverOn);
   if (d.send) { sendLoc(myLoc); lastSent = { lat: myLoc.lat, lng: myLoc.lng, t: Date.now() }; window.gpsSends = (window.gpsSends || 0) + 1; }
 }
@@ -346,8 +347,8 @@ function renderLobby() {
     $('pickNote').textContent = hp.manual ? `🔒 Manual pick (secret — only you see this): ${hp.ids.length} hunter${hp.ids.length === 1 ? '' : 's'} picked. Everyone else hides.` : `🎲 Roles are dealt randomly at start: ${Math.min(hp.hunters, Math.max(1, S.players.length - 1))} hunter(s), nobody sees roles until the reveal.`; }
   const st = S.settings; const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   set('sGame', +(st.gameSec / 60).toFixed(2)); set('sPing', st.pingSec); set('sHide', st.hideSec);
-  set('sPower', st.powerups || 'normal'); set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
-  $('sPower').disabled = $('sChimeVol').disabled = S.you !== S.host;
+  set('sPower', st.powerups || 'normal'); set('sTasks', st.tasks || 'off'); set('sChimeVol', st.chimeVol ?? 25); $('chimeVolLbl').textContent = (st.chimeVol ?? 25) + '%';
+  $('sPower').disabled = $('sTasks').disabled = $('sChimeVol').disabled = S.you !== S.host;
   $('sBecome').checked = st.caughtBecomeHunter; $('sReveal').checked = st.showRevealed; $('sMates').checked = st.teammates !== false;
   for (const [f, id] of FEAT) $(id).checked = !!st.features?.[f];
   const m = me();
@@ -357,9 +358,9 @@ function renderLobby() {
   $('camStatus').textContent = m?.cam === 'granted' ? '✅ Ready · camera allowed' : m?.cam === 'denied' ? '✅ Ready · no camera (hunters see “photo unavailable”)' : 'Not ready yet';
 }
 const FEAT = [['decoy', 'fDecoy'], ['chime', 'fChime'], ['bounty', 'fBounty'], ['cam', 'fCam'], ['compass', 'fCompass']];
-function pushSettings(e) { const custom = S.settings.mode === 'custom' || ['sPower', ...FEAT.map(x => x[1])].includes(e?.target?.id); // toggles only travel in Custom (a preset owns them otherwise)
+function pushSettings(e) { const custom = S.settings.mode === 'custom' || ['sPower', 'sTasks', ...FEAT.map(x => x[1])].includes(e?.target?.id); // toggles only travel in Custom (a preset owns them otherwise)
   sendMsg({ type: 'settings', settings: { gameSec: $('sGame').value * 60, pingSec: +$('sPing').value, hideSec: +$('sHide').value, caughtBecomeHunter: $('sBecome').checked, showRevealed: $('sReveal').checked, teammates: $('sMates').checked, chimeVol: +$('sChimeVol').value,
-  ...(custom ? { mode: 'custom', powerups: $('sPower').value, features: Object.fromEntries(FEAT.map(([f, id]) => [f, $(id).checked])) } : {}) } }); }
+  ...(custom ? { mode: 'custom', powerups: $('sPower').value, tasks: $('sTasks').value, features: Object.fromEntries(FEAT.map(([f, id]) => [f, $(id).checked])) } : {}) } }); }
 // ---------- game modes (presets; Custom reveals the individual toggles) ----------
 const MODES = { classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.' }, party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.' },
   chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.' }, custom: { label: 'Custom', desc: 'Pick every toggle yourself.' } };
@@ -373,7 +374,7 @@ function renderModes() {
 }
 for (const b of document.querySelectorAll('[data-mode]')) b.onclick = () => sendMsg({ type: 'settings', settings: { mode: b.dataset.mode } });
 $('sChimeVol').oninput = () => $('chimeVolLbl').textContent = $('sChimeVol').value + '%';
-for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sMates', 'sPower', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
+for (const id of ['sGame', 'sPing', 'sHide', 'sBecome', 'sReveal', 'sMates', 'sPower', 'sTasks', 'sChimeVol', ...FEAT.map(x => x[1])]) $(id).onchange = pushSettings;
 $('btnQuick').onclick = () => { $('sGame').value = 2; $('sPing').value = 10; $('sHide').value = 10; pushSettings(); toast('2-min test game: pings 10 s, bounty every 30 s, cam at 1:00, compass from 1:48'); };
 $('btnReadyCam').onclick = askCam;
 // host chime preview on every phone (lobby only): on slider release, or at most every 1.5 s while dragging
@@ -679,7 +680,7 @@ function placeRecBtn() { // in game the Record button lives in the bottom action
 // role card at round start (and on infection)
 let rcRound = -1, rcMode = null;
 function modeBullets(st) {
-  const f = st.features || {}, ex = [f.decoy && '👻 decoys', f.bounty && '💰 bounties', st.powerups !== 'off' && `🎁 power-ups${st.powerups === 'chaos' ? ' (chaos)' : ''}`, f.compass && '🧭 sudden-death compass', f.cam && '📷 cam peek'].filter(Boolean);
+  const f = st.features || {}, ex = [f.decoy && '👻 decoys', f.bounty && '💰 bounties', st.powerups !== 'off' && `🎁 power-ups${st.powerups === 'chaos' ? ' (chaos)' : ''}`, st.tasks && st.tasks !== 'off' && `🧩 hider tasks${st.tasks === 'often' ? ' (often)' : ''}`, f.compass && '🧭 sudden-death compass', f.cam && '📷 cam peek'].filter(Boolean);
   return [`📡 Ping every ${st.pingSec >= 60 ? (st.pingSec / 60) + ' min' : st.pingSec + ' s'} · ${Math.round(st.gameSec / 60)} min game`,
     ex.length ? `${(MODES[st.mode] || MODES.custom).label}: ${ex.join(', ')}` : `${(MODES[st.mode] || MODES.custom).label}: no extras, ${f.chime ? '🔔 chime within 40 m' : 'pure hide & seek'}`,
     S.field ? '🟨 Stay inside the yellow boundary (30 s grace)' : '🙌 Tag in real life, then confirm in the app'];
