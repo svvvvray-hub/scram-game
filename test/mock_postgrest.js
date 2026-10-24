@@ -2,8 +2,8 @@
 // Tiny in-process imitation of Supabase's PostgREST (/rest/v1) for tests: apikey auth, select with eq/in/gt/lt filters,
 // order/limit/offset, upsert (POST + Prefer: resolution=merge-duplicates), delete with filters. Failure injection via .failing.
 const express = require('express');
-const PK = { lastping_kv: ['key'], lastping_socials: ['platform', 'handle'], lastping_polls: ['code'] };
-const COLS = { lastping_kv: ['key', 'value', 'updated_at'], lastping_socials: ['platform', 'handle', 'data', 'updated_at'], lastping_polls: ['code', 'data', 'expires_at', 'updated_at'] };
+const PK = { lastping_kv: ['key'], lastping_socials: ['platform', 'handle'], lastping_polls: ['code'], lastping_feedback: ['id'], lastping_notify: ['id'] };
+const COLS = { lastping_kv: ['key', 'value', 'updated_at'], lastping_socials: ['platform', 'handle', 'data', 'updated_at'], lastping_polls: ['code', 'data', 'expires_at', 'updated_at'], lastping_feedback: ['id', 'data', 'created_at', 'updated_at'], lastping_notify: ['id', 'data', 'created_at', 'updated_at'] };
 
 function parseIn(v) { const m = /^\((.*)\)$/.exec(v); if (!m) return null; const out = []; let cur = '', inq = false, esc = false, quoted = false;
   for (const ch of m[1]) { if (esc) { cur += ch; esc = false; } else if (ch === '\\' && inq) esc = true; else if (ch === '"') { inq = !inq; quoted = true; }

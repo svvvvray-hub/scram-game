@@ -417,6 +417,7 @@ function createApp(opts = {}) {
     event(L, winner === 'hiders' ? 'Time up — hiders win!' : 'Everyone caught — hunters win!');
     broadcast(L);
     const rcp = buildRecap(L); for (const p of L.players.values()) send(p.ws, { type: 'recap', recap: rcp });
+    L.rg = { round: L.round, fb: [] }; for (const p of L.players.values()) { p.rgChoice = null; p.rgHist = []; p.fbDone = false; p.notifyDone = false; } sendRegroup(L);
   }
 
   function tick() {
@@ -456,6 +457,7 @@ function createApp(opts = {}) {
         if (F.cam && L.camAt && t >= L.camAt) { L.camAt = 0; requestPhotos(L); broadcast(L); }
         if (L.camDeadline && t >= L.camDeadline) { expirePhotos(L); broadcast(L); }
       }
+      if (L.state === 'ended' && L.rg && t - (L.rg.at || 0) >= RG_EVERY) sendRegroup(L);
     }
   }
   const timer = setInterval(tick, opts.tickMs || 200);
@@ -700,6 +702,30 @@ function createApp(opts = {}) {
       if (L.state === 'playing') send(p.ws, { type: 'tagProg', p: v, role: isHunter(p) ? 'hunter' : 'hider' });
     }
   }
+  // ---- v18 post-round Regroup: only while L.state === 'ended' (all in-game secrecy rules are untouched) ----
+  const RG_EVERY = opts.regroupMs ?? 2000, RG_FRESH = 120000, FB_MAX = 500;
+  const rgAnchor = L => L.players.get(L.creatorId) || L.players.get(L.hostId) || null;
+  function rgTrend(p) { const h = p.rgHist || []; if (h.length < 2) return null; const a = h[0], b = h[h.length - 1]; if (b.t - a.t < 4000) return null;
+    const dd = b.d - a.d; return dd < -4 ? 'closer' : dd > 4 ? 'away' : 'stopped'; }
+  function sendRegroup(L, only) {
+    if (L.state !== 'ended' || !L.rg) return; const t = now(), A = rgAnchor(L); if (!only) L.rg.at = t;
+    const aLoc = A && A.loc && t - A.loc.recvAt < RG_FRESH ? A.loc : null;
+    const ps = [...L.players.values()];
+    const distOf = p => aLoc && p.loc && t - p.loc.recvAt < RG_FRESH ? Math.round(distM(aLoc, p.loc)) : null;
+    if (!only) for (const p of ps) { const d = distOf(p); if (d == null || p === A) { p.rgHist = []; continue; }
+      p.rgHist = (p.rgHist || []).filter(x => t - x.t < 20000); if (!p.rgHist.length || t - p.rgHist[p.rgHist.length - 1].t >= 1500) p.rgHist.push({ t, d }); }
+    const others = ps.filter(p => p !== A && p.id !== L.hostId);
+    const rows = ps.filter(p => p.id !== L.hostId).map(p => ({ id: p.id, name: p.name, status: p.rgChoice || 'none', dist: p === A ? 0 : distOf(p), trend: p === A ? null : rgTrend(p), anchor: p === A,
+      conn: p.byeAt ? 'closed' : p.connected ? 'ok' : 'offline', fb: !!p.fbDone }));
+    const panel = { rows, waiting: rows.filter(r => r.status === 'none').length, total: rows.length, inCount: rows.filter(r => r.status === 'in').length + 1, fb: L.rg.fb };
+    for (const p of only ? [only] : ps) {
+      if (!p.ws) continue;
+      const msg = { type: 'regroup', round: L.rg.round, anchor: A ? { id: A.id, name: A.name, isCreator: A.id === L.creatorId, loc: aLoc ? { lat: aLoc.lat, lng: aLoc.lng, acc: aLoc.acc, age: t - aLoc.recvAt } : null } : null,
+        me: { choice: p.rgChoice || null, dist: p === A ? 0 : distOf(p), fbDone: !!p.fbDone } };
+      if (p.id === L.hostId || p.id === L.creatorId) msg.panel = panel; // only the host / creator get everyone's status and distance
+      send(p.ws, msg);
+    }
+  }
   function resetFeatures(L, ps) {
     L.bounty = null; L.photos = {}; L.camAt = L.compassAt = L.nextBountyAt = L.nextCompassAt = L.camDeadline = 0; L.compassAnnounced = false;
     for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; p.task = null; p.noisy = false; p.tagP = 0; }
@@ -707,7 +733,7 @@ function createApp(opts = {}) {
   }
   function rematch(L) {
     if (L.state !== 'ended') return;
-    L.state = 'lobby'; L.pings = []; L.winner = null; L.events = []; L.startedAt = L.hideEndsAt = L.endsAt = L.nextPingAt = L.endedAt = 0;
+    L.rg = null; L.state = 'lobby'; L.pings = []; L.winner = null; L.events = []; L.startedAt = L.hideEndsAt = L.endsAt = L.nextPingAt = L.endedAt = 0;
     L.idleSince = now(); resetFeatures(L, [...L.players.values()]); clearRound(L);
     for (const p of L.players.values()) { p.caughtBy = null; p.caught = false; p.caughtAt = 0; p.revealedAt = 0; if (p.startRole) p.role = p.startRole; }
     broadcast(L);
@@ -756,7 +782,7 @@ function createApp(opts = {}) {
           return send(ws, { type: 'error', error: 'Too many tries from your network. Wait a few minutes and try again.', rate: true });
         if (m.type === 'create') {
           if (stats.canCreate(liveCounts().games)) return send(ws, { type: 'error', error: BUSY_MSG, busy: true });
-          L = newLobby(); me = addPlayer(L, m.name, social); stats.gameCreated(dev, ref); if (me.social) stats.handle(me.social, { ref });
+          L = newLobby(); me = addPlayer(L, m.name, social); L.creatorId = me.id; /* v18: the original creator is the regroup point, even after a host handoff */ stats.gameCreated(dev, ref); if (me.social) stats.handle(me.social, { ref });
         }
         else if (m.type === 'join') {
           L = lobbies.get(String(m.code || '').toUpperCase());
@@ -773,11 +799,12 @@ function createApp(opts = {}) {
           const PL = lobbies.get(String(m.code || '').toUpperCase()), p = PL && [...PL.players.values()].find(x => x.token === m.token);
           return send(ws, p ? { type: 'session', ok: true, code: PL.code, state: PL.state, name: p.name, ...(preReveal(PL) ? {} : { role: p.role, caught: p.caught }) } : { type: 'session', ok: false });
         } else return;
-        me.ws = ws; me.connected = true; me.discAt = 0; if (!running(L)) L.idleSince = now();
+        me.ws = ws; me.connected = true; me.discAt = 0; me.byeAt = 0; if (!running(L)) L.idleSince = now();
         send(ws, { type: 'joined', code: L.code, id: me.id, token: me.token });
         broadcast(L);
         if (L.state === 'ended') send(ws, { type: 'recap', recap: buildRecap(L) });
         if (L.plan && polls.get(L.plan.code)) send(ws, { type: 'plan', ...L.plan });
+        if (L.state === 'ended') sendRegroup(L, me);
         if (isHunter(me) && !preReveal(L)) for (const [id, ph] of Object.entries(L.photos)) send(ws, { type: 'camPeek', id, ...ph });
         return;
       }
@@ -907,6 +934,26 @@ function createApp(opts = {}) {
         case 'end': if (host && L.state !== 'ended' && L.state !== 'lobby') endGame(L, activeHiders(L).length ? 'hiders' : 'hunters'); break;
         case 'sync': send(ws, viewFor(L, me)); break;
         case 'rematch': rematch(L); send(ws, viewFor(L, me)); break;
+        case 'regroup': if (L.state === 'ended' && L.rg && ['in', 'done'].includes(m.choice)) { me.rgChoice = m.choice; sendRegroup(L); } break;
+        case 'regroupBye': if (L.state === 'ended') { me.byeAt = now(); sendRegroup(L); } break; // tab is closing (pagehide)
+        case 'feedback': if (L.state === 'ended' && L.rg && !me.fbDone) { me.fbDone = true;
+          const rating = Number.isInteger(m.rating) && m.rating >= 1 && m.rating <= 5 ? m.rating : null, liked = cleanText(m.liked, FB_MAX), improve = cleanText(m.improve, FB_MAX);
+          if (m.skip || (!rating && !liked && !improve)) { sendRegroup(L); break; }
+          const row = { rating, liked, improve, mode: L.settings.mode, players: L.players.size, round: L.round };
+          stats.feedback?.(row);
+          L.rg.fb.push({ id: me.id, name: me.name, rating, liked, improve, t: now() }); if (L.rg.fb.length > 40) L.rg.fb.shift();
+          for (const id of new Set([L.hostId, L.creatorId])) { const h = L.players.get(id); if (h && h !== me) send(h.ws, { type: 'feedbackIn', name: me.name, rating, liked, improve }); }
+          sendRegroup(L); } break;
+        case 'notifyMe': if (L.state === 'ended' && !me.notifyDone) { // opt-in: "Ping me for the next game" (@ or email)
+          const em = typeof m.email === 'string' ? m.email.trim().toLowerCase() : '';
+          let c = null;
+          if (em) { if (em.length <= 254 && /^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,24}$/.test(em) && !/\.\./.test(em)) c = { kind: 'email', email: em }; }
+          else { const so = Socials.norm({ handle: String(m.handle || '').slice(0, 120), platform: m.platform }); if (so) c = { kind: 'social', platform: so.platform, handle: so.handle }; }
+          if (!c) { send(ws, { type: 'notifyRes', ok: false, error: em ? 'That email doesn’t look right.' : 'That handle doesn’t look right.' }); break; }
+          me.notifyDone = !!stats.notify?.(c); send(ws, { type: 'notifyRes', ok: me.notifyDone }); } break;
+        case 'nextRound': if (host && L.state === 'ended') { // same room, only the players who are in (host always stays)
+          for (const p of [...L.players.values()]) if (p.id !== me.id && p.rgChoice !== 'in') { send(p.ws, { type: 'regroupOut' }); leave(L, p); }
+          rematch(L); } break;
         case 'leave': leave(L, me); me = null; L = null; break;
       }
     }

@@ -50,6 +50,9 @@ We **do not** collect your real name, email address, phone number, contacts, or 
 - **Hunters:** other hunters on your team can see your location live.
 - **Everyone:** other players may see whether you are inside or outside the playing field (an in/out flag only). The host's location may be used to center the playing field.
 - **Recap:** at the end of a round, players in your lobby can see each hider's ping trail on a map.
+- **After a round ends (Regroup):** to help everyone meet up again, the live location of the person who created the room (or the current host if the creator has left) is shown to all players in that lobby, and the room creator and host see each player's distance to the meeting point, whether it is shrinking or growing, and whether the player is still connected. Exact positions of other players are not shown, and this sharing happens only after the round has ended, never during a game.
+- **"Ping me for the next game":** optionally leave a social handle (with platform) or an email on the final screen; we store it in Supabase only to tell you about the next game and delete it on request.
+- **Post-round feedback:** if you tap "I'm done for now" you can optionally leave a 1 to 5 rating and two short answers. They are shown live, with your display name, to the host of that lobby. We store the rating and text (up to 500 characters each) in our database (Supabase) without your name, handle or player id, and delete it on request.
 - Location sharing stops when the round ends or you leave the lobby or close the page. You can deny location permission in your browser at any time, but then the game won't work for you.
 
 **Please don't play from, or end a game at, your home** or any other place you want to keep private. See our Terms of Service.

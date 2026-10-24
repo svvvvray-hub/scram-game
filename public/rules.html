@@ -14,7 +14,7 @@ summary{cursor:pointer;font-weight:800;font-size:1.1em;padding:14px 0;list-style
 ul{padding-left:1.2em}li{margin:3px 0}
 </style></head><body>
 <header><a class="back" href="/" target="_top">← Back to Last Ping</a><h1>📖 How to play</h1><p class="sub">GPS hide &amp; seek in your phone's browser. Tap a section to open it.</p></header>
-<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#tasks">Tasks</a><a href="#autotag">Auto-tag</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
+<nav class="toc"><a href="#goal">Goal &amp; roles</a><a href="#modes">Modes</a><a href="#play">Playing</a><a href="#timing">Timing</a><a href="#field">Field</a><a href="#decoy">Decoys</a><a href="#chime">Chime</a><a href="#bounty">Bounties</a><a href="#power">Power-ups</a><a href="#tasks">Tasks</a><a href="#autotag">Auto-tag</a><a href="#regroup">Regroup</a><a href="#record">Recording</a><a href="#recap">Recap</a><a href="#reels">Reels</a><a href="#safety">Safety</a></nav>
 <main>
 <details id="goal" open><summary>🎯 Goal &amp; roles</summary>
 <p><b>Hiders 🙈</b> try to stay uncaught until the clock runs out. <b>Hunters 🔦</b> try to catch every hider first. The host picks roles (any number of hunters, at least one) or taps 🎲 Randomize.</p>
@@ -65,6 +65,11 @@ ul{padding-left:1.2em}li{margin:3px 0}
 <li>Step out of range and the tag breaks. The ring resets after about 1.5 s.</li><li>Walking past doesn’t count. It needs continuous contact confirmed by more than one GPS update.</li>
 <li>Weak GPS needs longer and closer contact, up to about 20 s. With very poor accuracy (worse than ±30 m), auto-tag pauses and you use the manual buttons.</li>
 <li>The host can keep or remove the manual <b>Catch / I got caught</b> buttons as a fallback. The host can always confirm a catch.</li></ul></details>
+<details id="regroup"><summary>📍 Regroup after a round</summary>
+<p>When a round ends, the recap shows a <b>Regroup</b> panel. Everyone sees the room creator’s live position as a “Meet here” pin, how far away they are, and a <b>Head back to host</b> button that opens walking directions. If the creator has left, the current host is the meeting point. This only happens after the round. During a game, nothing changes.</p>
+<ul><li>Tap <b>I’m in for another round</b> or <b>I’m done for now</b>. If you’re done, you can leave a quick rating and a note for the host, or skip it.</li>
+<li>The host sees who’s coming back, who’s done and who hasn’t answered, plus each player’s distance, whether they’re getting closer or moving away, and whether their connection dropped. Then they tap <b>Start next round</b> for the players who are in.</li>
+<li>Optional: <b>🔔 Ping me for the next game</b> with your @ or an email.</li></ul></details>
 <details id="power"><summary>🎁 Power-ups</summary>
 <p><b>Drops</b> appear every <span class="v" data-v="dropEveryMin">3</span> min (host setting: Off / Normal / Chaos = every <span class="v" data-v="chaosEverySec">90</span> s), alternating hider drops and hunter drops — none in the first <span class="v" data-v="noDropsFirstMin">2</span> min or in sudden death. They spawn <span class="v" data-v="dropMinM">50</span>–<span class="v" data-v="dropMaxM">200</span> m from a player, inside the field, and vanish after <span class="v" data-v="dropTtlMin">2.5</span> min.</p>
 <ul><li>🎁 <b>Hider drops</b> are visible only to hiders. ⚡ <b>Hunter drops</b> are visible to everyone.</li>

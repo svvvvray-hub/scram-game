@@ -7,11 +7,12 @@
 //   lastping_kv      key 'stats' (counters blob) and 'settings' (brake switch)
 //   lastping_socials one row per (platform, handle) -> admin deletes are real row deletes
 //   lastping_polls   one row per poll code, expires_at for server-side cleanup / on-demand lookups
+//   lastping_feedback one row per post-round feedback (v18), admin delete = real row delete
 //
 // Flow: start() loads everything (retrying with backoff); afterwards every stats.touch() schedules a throttled save
 // (default 5 s) that upserts only rows whose JSON changed since the last successful save and deletes rows that are gone
 // (expired polls, deleted handles). Failures are logged, retried with exponential backoff, and the app keeps serving from memory.
-const KV = 'lastping_kv', SOC = 'lastping_socials', POLLS = 'lastping_polls';
+const KV = 'lastping_kv', SOC = 'lastping_socials', POLLS = 'lastping_polls', FB = 'lastping_feedback', NT = 'lastping_notify';
 const PAGE = 1000, CHUNK = 500;
 const iso = ms => new Date(ms).toISOString();
 const q = v => '"' + String(v).replace(/["\\]/g, '\\$&') + '"'; // PostgREST quoted value for in.(...)
@@ -28,7 +29,7 @@ function createSupabaseStore({ url, key, fetch: f = globalThis.fetch, throttleMs
   let stats = null, loaded = false, closed = false;
   let timer = null, saving = null, again = false, failures = 0, loadFailures = 0, nextRetryAt = 0;
   let lastSaveAt = 0, lastLoadAt = 0, lastError = null, lastErrorAt = 0, lastOkAt = 0, cleanupTimer = null;
-  const snap = { kv: new Map(), soc: new Map(), polls: new Map() }; // last successfully saved JSON per row
+  const snap = { kv: new Map(), soc: new Map(), polls: new Map(), fb: new Map(), nt: new Map() }; // last successfully saved JSON per row
   const tomb = new Set(); // socials deleted by the admin: deleted remotely even if not in the snapshot (e.g. before load finished)
   const misses = new Map(); // code -> time of a recent "not found" (on-demand poll lookups)
 
@@ -52,13 +53,17 @@ function createSupabaseStore({ url, key, fetch: f = globalThis.fetch, throttleMs
   }
   async function load() {
     const t = now();
-    const [kv, socials, polls] = await Promise.all([selectAll(KV, 'key,value', '', 'key.asc'), selectAll(SOC, 'platform,handle,data', '', 'platform.asc,handle.asc'),
-      selectAll(POLLS, 'code,data', `&expires_at=gt.${encodeURIComponent(iso(t))}`, 'code.asc')]);
-    const remote = { kv: {}, handles: {}, polls: {} };
+    const [kv, socials, polls, fbs, nts] = await Promise.all([selectAll(KV, 'key,value', '', 'key.asc'), selectAll(SOC, 'platform,handle,data', '', 'platform.asc,handle.asc'),
+      selectAll(POLLS, 'code,data', `&expires_at=gt.${encodeURIComponent(iso(t))}`, 'code.asc'), selectAll(FB, 'id,data', '', 'id.asc'), selectAll(NT, 'id,data', '', 'id.asc')]);
+    const remote = { kv: {}, handles: {}, polls: {}, feedback: {}, notify: {} };
+    for (const r of nts) if (r && r.data && r.data.id === r.id) remote.notify[r.id] = r.data;
+    for (const r of fbs) if (r && r.data && r.data.id === r.id) remote.feedback[r.id] = r.data;
     for (const r of kv) remote.kv[r.key] = r.value;
     for (const r of socials) if (r && r.data && typeof r.data === 'object') remote.handles[r.platform + ':' + r.handle] = r.data;
     for (const r of polls) if (r && r.data && r.data.code === r.code) remote.polls[r.code] = r.data;
-    snap.kv.clear(); snap.soc.clear(); snap.polls.clear();
+    snap.kv.clear(); snap.soc.clear(); snap.polls.clear(); snap.fb.clear(); snap.nt.clear();
+    for (const [k, v] of Object.entries(remote.notify)) snap.nt.set(k, JSON.stringify(v));
+    for (const [k, v] of Object.entries(remote.feedback)) snap.fb.set(k, JSON.stringify(v));
     for (const [k, v] of Object.entries(remote.kv)) snap.kv.set(k, JSON.stringify(v));
     for (const [k, v] of Object.entries(remote.handles)) snap.soc.set(k, JSON.stringify(v));
     for (const [k, v] of Object.entries(remote.polls)) snap.polls.set(k, JSON.stringify(v));
@@ -84,8 +89,12 @@ function createSupabaseStore({ url, key, fetch: f = globalThis.fetch, throttleMs
   }
 
   function rowsToSave() {
-    const d = stats.data(), out = { kv: [], socUp: [], socDel: [], pollUp: [], pollDel: [] };
-    const { handles, polls, settings, ...rest } = d;
+    const d = stats.data(), out = { kv: [], socUp: [], socDel: [], pollUp: [], pollDel: [], fbUp: [], fbDel: [], ntUp: [], ntDel: [] };
+    const { handles, polls, settings, feedback, notify, ...rest } = d;
+    for (const [k, r] of Object.entries(notify || {})) { const j = JSON.stringify(r); if (snap.nt.get(k) !== j) out.ntUp.push({ k, j, at: r.first || r.at }); }
+    for (const k of snap.nt.keys()) if (!notify || !Object.prototype.hasOwnProperty.call(notify, k)) out.ntDel.push(k);
+    for (const [k, r] of Object.entries(feedback || {})) { const j = JSON.stringify(r); if (snap.fb.get(k) !== j) out.fbUp.push({ k, j, at: r.at }); }
+    for (const k of snap.fb.keys()) if (!feedback || !Object.prototype.hasOwnProperty.call(feedback, k)) out.fbDel.push(k);
     for (const [k, v] of [['stats', rest], ['settings', settings]]) { const j = JSON.stringify(v); if (snap.kv.get(k) !== j) out.kv.push({ k, j }); }
     for (const [k, r] of Object.entries(handles || {})) { const j = JSON.stringify(r); if (snap.soc.get(k) !== j) out.socUp.push({ k, j }); }
     for (const k of new Set([...snap.soc.keys(), ...tomb])) if (!handles || !Object.prototype.hasOwnProperty.call(handles, k)) out.socDel.push(k);
@@ -106,7 +115,11 @@ function createSupabaseStore({ url, key, fetch: f = globalThis.fetch, throttleMs
       for (const h of c) { snap.soc.delete(p + ':' + h); tomb.delete(p + ':' + h); } }
     for (const c of chunks(w.pollUp)) { await rest('POST', POLLS, { prefer: UPSERT, body: c.map(r => ({ code: r.k, data: JSON.parse(r.j), expires_at: iso(r.exp), updated_at: at })) }); for (const r of c) snap.polls.set(r.k, r.j); }
     for (const c of chunks(w.pollDel, 100)) { await rest('DELETE', `${POLLS}?code=in.(${encodeURIComponent(c.map(q).join(','))})`, { prefer: 'return=minimal' }); for (const k of c) snap.polls.delete(k); }
-    return w.kv.length + w.socUp.length + w.socDel.length + w.pollUp.length + w.pollDel.length;
+    for (const c of chunks(w.fbUp)) { await rest('POST', FB, { prefer: UPSERT, body: c.map(r => ({ id: r.k, data: JSON.parse(r.j), created_at: r.at, updated_at: at })) }); for (const r of c) snap.fb.set(r.k, r.j); }
+    for (const c of chunks(w.fbDel, 100)) { await rest('DELETE', `${FB}?id=in.(${encodeURIComponent(c.map(q).join(','))})`, { prefer: 'return=minimal' }); for (const k of c) snap.fb.delete(k); }
+    for (const c of chunks(w.ntUp)) { await rest('POST', NT, { prefer: UPSERT, body: c.map(r => ({ id: r.k, data: JSON.parse(r.j), created_at: r.at, updated_at: at })) }); for (const r of c) snap.nt.set(r.k, r.j); }
+    for (const c of chunks(w.ntDel, 100)) { await rest('DELETE', `${NT}?id=in.(${encodeURIComponent(c.map(q).join(','))})`, { prefer: 'return=minimal' }); for (const k of c) snap.nt.delete(k); }
+    return w.ntUp.length + w.ntDel.length + w.fbUp.length + w.fbDel.length + w.kv.length + w.socUp.length + w.socDel.length + w.pollUp.length + w.pollDel.length;
   }
   function run() {
     timer = null;

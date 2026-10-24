@@ -37,3 +37,16 @@ alter table public.lastping_polls   enable row level security;
 revoke all on table public.lastping_kv, public.lastping_socials, public.lastping_polls from anon, authenticated;
 -- explicit grants (new Supabase projects no longer expose new tables to the Data API automatically)
 grant select, insert, update, delete on table public.lastping_kv, public.lastping_socials, public.lastping_polls to service_role;
+
+-- v18 post-round feedback (rating + two short texts; no names or player ids). Single-line statements:
+create table if not exists public.lastping_feedback (id text primary key, data jsonb not null, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create index if not exists lastping_feedback_created_at_idx on public.lastping_feedback (created_at);
+alter table public.lastping_feedback enable row level security;
+revoke all on table public.lastping_feedback from anon, authenticated;
+grant select, insert, update, delete on table public.lastping_feedback to service_role;
+
+-- v18 "Ping me for the next game" opt-ins (a social @ or an email; deletable from /admin). Single-line statements:
+create table if not exists public.lastping_notify (id text primary key, data jsonb not null, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+alter table public.lastping_notify enable row level security;
+revoke all on table public.lastping_notify from anon, authenticated;
+grant select, insert, update, delete on table public.lastping_notify to service_role;

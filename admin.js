@@ -30,7 +30,7 @@ function mount(app, { env, stats, liveCounts, polls = null }) {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(req.query.key !== undefined)));
     if (req.query.key !== undefined) { setCookie(req, res); return res.redirect(303, '/admin'); } // strip the key from the URL / history
     const sort = req.query.sort === 'games' ? 'games' : 'last', pf = Socials.isPlatform(req.query.platform) ? req.query.platform : '';
-    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(sort, pf || null), sort, pf, req.query.deleted, polls && polls.summary(), stats.storageStatus?.())));
+    res.type('html').send(page('Last Ping · growth', dashboard(stats.summary(liveCounts()), req.query.saved, stats.handleList(sort, pf || null), sort, pf, req.query.deleted, polls && polls.summary(), stats.storageStatus?.()) + feedbackCard(stats.feedbackList?.() || [], req.query.fbdeleted) + notifyCard(stats.notifyList?.() || [], req.query.ntdeleted)));
   });
   app.post('/admin/login', gate, form, (req, res) => {
     if (!authed(req)) return res.status(401).type('html').send(page('Admin login', login(true)));
@@ -52,6 +52,31 @@ function mount(app, { env, stats, liveCounts, polls = null }) {
     const b = req.body || {}, ok = stats.deleteHandle(String(b.platform || ''), String(b.handle || ''));
     if (req.is('json')) return res.status(ok ? 200 : 404).json({ ok });
     res.redirect(303, '/admin?deleted=' + (ok ? '1' : '0') + '#handles');
+  });
+  // v18 post-round feedback: CSV export + delete
+  app.get('/admin/feedback.csv', gate, (req, res) => {
+    if (!authed(req)) return res.status(401).type('text').send('Unauthorized');
+    const q = v => { v = String(v ?? ''); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = (stats.feedbackList?.() || []).map(f => [f.id, f.at, f.rating ?? '', f.liked, f.improve, f.mode, f.players, f.round].map(q).join(','));
+    res.set('Content-Disposition', 'attachment; filename="lastping-feedback.csv"').type('text/csv').send(['id,created_utc,rating,liked,improve,mode,players,round', ...rows].join('\r\n') + '\r\n');
+  });
+  app.post('/admin/feedback/delete', gate, form, json, (req, res) => {
+    if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const ok = !!stats.deleteFeedback?.(String((req.body || {}).id || ''));
+    if (req.is('json')) return res.status(ok ? 200 : 404).json({ ok });
+    res.redirect(303, '/admin?fbdeleted=' + (ok ? '1' : '0') + '#feedback');
+  });
+  app.get('/admin/notify.csv', gate, (req, res) => {
+    if (!authed(req)) return res.status(401).type('text').send('Unauthorized');
+    const q = v => { v = String(v ?? ''); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = (stats.notifyList?.() || []).map(n => [n.id, n.kind, n.platform || '', n.handle || '', n.kind === 'social' ? Socials.url(n) : '', n.email || '', n.first, n.at].map(q).join(','));
+    res.set('Content-Disposition', 'attachment; filename="lastping-ping-me.csv"').type('text/csv').send(['id,kind,platform,handle,profile_url,email,first_utc,last_utc', ...rows].join('\r\n') + '\r\n');
+  });
+  app.post('/admin/notify/delete', gate, form, json, (req, res) => {
+    if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const ok = !!stats.deleteNotify?.(String((req.body || {}).id || ''));
+    if (req.is('json')) return res.status(ok ? 200 : 404).json({ ok });
+    res.redirect(303, '/admin?ntdeleted=' + (ok ? '1' : '0') + '#notify');
   });
   app.post('/admin/settings', gate, form, json, (req, res) => {
     if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
@@ -142,5 +167,27 @@ function pollsCard(ps) {
 <div><div class="big">${ps.created}</div><div class="lbl">polls created</div></div><div><div class="big">${ps.locked}</div><div class="lbl">locked</div></div></div>
 <table id="pollTable"><tr><th>Code</th><th>By</th><th>Created</th><th class="n">Times×places</th><th class="n">Voters</th><th>Status</th><th>Expires</th></tr>${rows}</table>
 <p class="lbl">Recent polls (newest first). Polls expire 14 days after their latest time option (kept in Supabase when configured, otherwise in STATS_FILE). Times in UTC.</p></div>`;
+}
+const STARS = ['', '😞', '😕', '😐', '🙂', '🤩'];
+function feedbackCard(list, deleted) {
+  const avg = list.filter(f => f.rating).reduce((a, f, _, arr) => a + f.rating / arr.length, 0);
+  const rows = list.length ? list.slice(0, 300).map(f => `<tr data-fb="${esc(f.id)}"><td style="white-space:nowrap">${esc(utc(Date.parse(f.at)))}</td><td>${f.rating ? STARS[f.rating] + ' ' + f.rating : '—'}</td><td>${esc(f.liked || '')}</td><td>${esc(f.improve || '')}</td><td class="n">${esc(f.players ?? '')}</td>
+<td><form method="post" action="/admin/feedback/delete" style="margin:0" onsubmit="return confirm('Delete this feedback? This cannot be undone.')"><input type="hidden" name="id" value="${esc(f.id)}"><button class="ghost" title="Delete">🗑️</button></form></td></tr>`).join('')
+    : '<tr><td colspan="6" class="lbl">No feedback yet</td></tr>';
+  return `<div class="card" id="feedback" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>💬 Post-round feedback <span class="pill off" id="fbCount">${list.length}</span>${avg ? ` <span class="lbl">avg ${avg.toFixed(1)} / 5</span>` : ''}</h2>
+<a href="/admin/feedback.csv" download id="fbCsv"><button type="button">Download CSV</button></a></div>
+${deleted === '1' ? '<div class="ok" id="fbDeletedMsg">🗑️ Feedback deleted</div>' : deleted === '0' ? '<div class="ok err" id="fbDeletedMsg">Feedback not found</div>' : ''}
+<table id="fbTable"><tr><th>When (UTC)</th><th>Rating</th><th>Liked</th><th>Would improve</th><th class="n">Players</th><th></th></tr>${rows}</table>
+<p class="lbl">From players who tapped "I'm done for now". No names or player ids are stored.</p></div>`;
+}
+function notifyCard(list, deleted) {
+  const rows = list.length ? list.slice(0, 500).map(n => `<tr data-nt="${esc(n.id)}"><td>${n.kind === 'email' ? '✉️ ' + esc(n.email) : `<a href="${esc(Socials.url(n))}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">@${esc(n.handle)}</a> <span class="lbl">${esc(Socials.label(n.platform))}</span>`}</td><td style="white-space:nowrap">${esc(utc(Date.parse(n.at)))}</td>
+<td><form method="post" action="/admin/notify/delete" style="margin:0" onsubmit="return confirm('Delete this contact? This cannot be undone.')"><input type="hidden" name="id" value="${esc(n.id)}"><button class="ghost" title="Delete">🗑️</button></form></td></tr>`).join('')
+    : '<tr><td colspan="3" class="lbl">Nobody yet</td></tr>';
+  return `<div class="card" id="notify" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>🔔 Ping me for the next game <span class="pill off" id="ntCount">${list.length}</span></h2>
+<a href="/admin/notify.csv" download id="ntCsv"><button type="button">Download CSV</button></a></div>
+${deleted === '1' ? '<div class="ok" id="ntDeletedMsg">🗑️ Contact deleted</div>' : deleted === '0' ? '<div class="ok err" id="ntDeletedMsg">Contact not found</div>' : ''}
+<table id="ntTable"><tr><th>Contact</th><th>Last opt-in (UTC)</th><th></th></tr>${rows}</table>
+<p class="lbl">Players who opted in on the final screen. Delete on request.</p></div>`;
 }
 module.exports = { mount };

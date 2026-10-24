@@ -75,6 +75,7 @@ function handle(m) {
   else if (m.type === 'left') { resetLocal(); toast('You left the lobby'); }
   else if (m.type === 'gone') { toast(m.kicked ? 'Removed from lobby' : 'Lobby closed'); sess = null; S = null; localStorage.removeItem('scram'); show('home'); }
   else if (window.TaskUI && TaskUI.onMsg(m)) { /* v16 tasks */ }
+  else if (window.Regroup && Regroup.onMsg(m)) { /* v18 regroup */ }
   else if (m.type === 'tagProg') tagRing(m);
   else if (m.type === 'need_fix') freshFix();
   else if (m.type === 'ping') { onPingFx(m); if (m.locs) { nearestId = m.nearest || null; toast(`📡 Ping #${m.n}: hider locations updated`); if (S && S.state === 'playing') { S.last = S.last || {}; for (const [id, l] of Object.entries(m.locs)) if (l) S.last[id] = { ...l, t: m.t }; for (const id of m.hidden || []) delete S.last[id]; S.pingCount = m.n; render(); } } else if (S && me()?.role === 'hider') { toast(m.out ? `💰 Surprise ping — a hunter grabbed the bounty and saw you!` : `📡 Ping #${m.n} — hunters just saw your location!`, 4000); navigator.vibrate?.(300); } }
@@ -102,7 +103,7 @@ function handle(m) {
   else if (m.type === 'compass') { compassData = m; renderCompass(); }
   else if (m.type === 'startBlocked') { const names = m.outside.map(o => o.name + (o.noGps ? ' (no GPS)' : '')).join(', '); if (confirm(`Outside the playing field: ${names}. Start anyway?`)) sendMsg({ type: 'start', force: true }); else toast('Outside: ' + names, 5000); }
   else if (m.type === 'time') onTime(m);
-  else if (m.type === 'state') { offset = syncedOffset ?? (m.serverNow - Date.now()); if (m.revealAt && m.revealAt !== (S && S.revealAt) && m.revealAt > m.serverNow) timeSync(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); window.TaskUI?.onState(S); }
+  else if (m.type === 'state') { offset = syncedOffset ?? (m.serverNow - Date.now()); if (m.revealAt && m.revealAt !== (S && S.revealAt) && m.revealAt > m.serverNow) timeSync(); const wasOut = S && S.outSince; S = m; window.S = m; if (S.outSince && !wasOut && S.state !== 'lobby') { navigator.vibrate?.([400, 200, 400]); lastVib = Date.now(); } render(); window.TaskUI?.onState(S); window.Regroup?.onState(S); }
 }
 const me = () => S && S.players.find(p => p.id === S.you);
 const PU_INFO = { radar: ['📡', 'Hunter Radar'], jammer: ['📵', 'Jammer'], silent: ['🤫', 'Silent Shoes'], shield: ['🛡️', 'Shield'], extraTime: ['⏩', 'Extra Time'], revive: ['💖', 'Revive'],

@@ -20,7 +20,7 @@ const hashId = s => crypto.createHash('sha256').update('lastping:' + s).digest('
 
 function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames = 50, persist = null } = {}) {
   const blank = () => ({ v: 1, days: {}, devices: {}, refs: {}, handles: {}, playClicks: 0, shares: {}, totals: { games: 0, started: 0, players: 0, blocked: 0 },
-    settings: { paused: false, maxGames, maxPerHour: 0 }, recentCreates: [], polls: {}, pollTotals: { created: 0, votes: 0, locked: 0 } });
+    settings: { paused: false, maxGames, maxPerHour: 0 }, recentCreates: [], polls: {}, feedback: {}, notify: {}, pollTotals: { created: 0, votes: 0, locked: 0 } });
   const shape = j => { const b = blank(); return { ...b, ...j, totals: { ...b.totals, ...j.totals }, settings: { ...b.settings, ...j.settings }, pollTotals: { ...b.pollTotals, ...j.pollTotals } }; };
   const readFile = () => { try { return shape(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { return null; } };
   // with a remote store (Supabase) the data is loaded asynchronously by persist.start() -> adopt(); the file is only a one-time import source
@@ -37,6 +37,8 @@ function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames
     const L = d, hasRemote = !!remote.kv.stats;
     const R = shape(hasRemote ? remote.kv.stats : (file && readFile()) || {}); // first run on an empty project: import STATS_FILE once if present
     if (!hasRemote && file && R.handles) for (const [k, v] of Object.entries(migrateHandles(R.handles))) remote.handles[k] ||= v;
+    if (!hasRemote && file && R.feedback) { remote.feedback ||= {}; for (const [k, v] of Object.entries(R.feedback)) remote.feedback[k] ||= v; }
+    if (!hasRemote && file && R.notify) { remote.notify ||= {}; for (const [k, v] of Object.entries(R.notify)) remote.notify[k] ||= v; }
     if (!hasRemote && file && R.polls) for (const [k, v] of Object.entries(R.polls)) remote.polls[k] ||= v;
     const sum = (a = {}, b = {}) => { const o = { ...a }; for (const [k, v] of Object.entries(b)) o[k] = (Number(o[k]) || 0) + (Number(v) || 0); return o; };
     const out = { ...R, v: 2 };
@@ -51,7 +53,7 @@ function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames
     const H = migrateHandles(remote.handles); for (const k of skipHandles) delete H[k];
     for (const [k, r] of Object.entries(L.handles)) { const p = H[k];
       H[k] = p ? { ...p, first: p.first < r.first ? p.first : r.first, last: p.last > r.last ? p.last : r.last, handle: r.handle, games: (p.games || 0) + (r.games || 0), ref: p.ref || r.ref || null } : r; }
-    out.handles = H; out.polls = { ...remote.polls, ...L.polls };
+    out.handles = H; out.polls = { ...remote.polls, ...L.polls }; out.feedback = { ...(remote.feedback || {}), ...(L.feedback || {}) }; out.notify = { ...(remote.notify || {}), ...(L.notify || {}) };
     for (const k of Object.keys(d)) delete d[k]; Object.assign(d, out); // keep the same object (polls/admin hold stats.data())
   }
   if (persist) persist.attach({ data: () => d, adopt });
@@ -80,7 +82,24 @@ function createStats({ file, now = () => Date.now(), throttleMs = 5000, maxGames
   const handleList = (sort = 'last', platform = null) => Object.values(d.handles).filter(r => !platform || r.platform === platform).map(r => ({ ...r, url: Socials.url(r) }))
     .sort(sort === 'games' ? (a, b) => b.games - a.games || b.last.localeCompare(a.last) : (a, b) => b.last.localeCompare(a.last) || b.games - a.games);
   const platformCounts = () => { const c = {}; for (const r of Object.values(d.handles)) c[r.platform] = (c[r.platform] || 0) + 1; return c; };
+  // v18 post-round feedback (no names / ids stored): {id, at, rating 1-5|null, liked, improve, mode, players, round}
+  const MAX_FB = 5000;
+  function feedback(row) { d.feedback ||= {}; const keys = Object.keys(d.feedback); if (keys.length >= MAX_FB) delete d.feedback[keys.sort((a, b) => d.feedback[a].at.localeCompare(d.feedback[b].at))[0]];
+    const id = crypto.randomBytes(6).toString('hex'), r = { id, at: new Date(now()).toISOString(), ...row }; d.feedback[id] = r; touch(); return r; }
+  const feedbackList = () => Object.values(d.feedback || {}).sort((a, b) => b.at.localeCompare(a.at));
+  function deleteFeedback(id) { if (!d.feedback || !Object.prototype.hasOwnProperty.call(d.feedback, id)) return false; delete d.feedback[id]; touch(); flush(); return true; }
+  // v18 "Ping me for the next game" opt-ins: {id, at, kind:'social'|'email', platform, handle, email}; id = hash of the contact (dedup)
+  const MAX_NOTIFY = 5000;
+  function notify(c) { d.notify ||= {}; const key = c.kind === 'email' ? 'email:' + c.email : c.platform + ':' + String(c.handle).toLowerCase();
+    const id = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16), prev = d.notify[id];
+    if (!prev && Object.keys(d.notify).length >= MAX_NOTIFY) return null;
+    const r = { id, at: new Date(now()).toISOString(), first: prev?.first || new Date(now()).toISOString(), kind: c.kind, platform: c.platform || null, handle: c.handle || null, email: c.email || null };
+    d.notify[id] = r; touch(); return r; }
+  const notifyList = () => Object.values(d.notify || {}).sort((a, b) => b.at.localeCompare(a.at));
+  function deleteNotify(id) { if (!d.notify || !Object.prototype.hasOwnProperty.call(d.notify, id)) return false; delete d.notify[id]; touch(); flush(); return true; }
   return {
+    notify, notifyList, deleteNotify,
+    feedback, feedbackList, deleteFeedback,
     data: () => d, flush, touch, persist,
     ready: persist ? null : Promise.resolve(true),
     fetchPoll: persist ? code => persist.fetchPoll(code) : null,

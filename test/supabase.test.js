@@ -264,3 +264,16 @@ test('node server.js: loads from Supabase before listening and flushes on SIGTER
     assert.strictEqual(mock.tables.lastping_kv.get('stats').value.playClicks, 11); assert.match(out, /SIGTERM/);
   } finally { p.kill('SIGKILL'); }
 });
+
+test('supabase: v18 feedback + ping-me rows are upserted, reloaded and really deleted', async () => {
+  const a = await boot(mock);
+  try {
+    const f = a.stats.feedback({ rating: 5, liked: 'fun', improve: '', mode: 'party', players: 4, round: 1 });
+    const n = a.stats.notify({ kind: 'email', email: 'x@y.io' });
+    await a.stats.flush(); await until(() => mock.tables.lastping_feedback.has(f.id) && mock.tables.lastping_notify.has(n.id));
+    assert.equal(mock.tables.lastping_feedback.get(f.id).data.liked, 'fun'); assert.equal(mock.tables.lastping_notify.get(n.id).data.email, 'x@y.io');
+    const b = await boot(mock); try { assert.equal(b.stats.feedbackList().length, 1); assert.equal(b.stats.notifyList().length, 1); } finally { await stop(b); }
+    a.stats.deleteFeedback(f.id); a.stats.deleteNotify(n.id); await a.stats.flush();
+    await until(() => !mock.tables.lastping_feedback.has(f.id) && !mock.tables.lastping_notify.has(n.id));
+  } finally { await stop(a); }
+});

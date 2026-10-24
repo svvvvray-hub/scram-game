@@ -141,6 +141,35 @@
 
 <section id="end" class="screen hidden">
   <h1 id="winner"></h1><div id="summary"></div>
+  <div id="regroup" class="hidden" aria-live="polite">
+    <h2>📍 Regroup</h2>
+    <p id="rgAnchor" class="note"></p>
+    <div id="rgMap"></div>
+    <div class="rgRow"><span id="rgDist" class="rgDist"></span><a id="rgDirections" class="btn small" target="_blank" rel="noopener">🧭 Head back to host</a></div>
+    <div id="rgChoice" class="seg rgChoice"><button id="rgIn" class="primary">🔁 I'm in for another round</button><button id="rgDone">👋 I'm done for now</button></div>
+    <p id="rgMine" class="note"></p>
+    <div id="rgFeedback" class="hidden rgFb">
+      <b>Thanks for playing! Mind telling us how it went?</b> <span class="note">(optional)</span>
+      <div id="rgStars" class="rgStars" role="radiogroup" aria-label="Rating"><button data-r="1" aria-label="1 of 5">😞</button><button data-r="2" aria-label="2 of 5">😕</button><button data-r="3" aria-label="3 of 5">😐</button><button data-r="4" aria-label="4 of 5">🙂</button><button data-r="5" aria-label="5 of 5">🤩</button></div>
+      <label>What did you like?<textarea id="rgLiked" maxlength="500" rows="2"></textarea></label>
+      <label>What would you improve, and why?<textarea id="rgImprove" maxlength="500" rows="2"></textarea></label>
+      <div class="seg"><button id="rgSend" class="primary">Send</button><button id="rgSkip">Skip</button></div>
+    </div>
+    <p id="rgThanks" class="note hidden">💜 Thanks! The host got your note. See you next time.</p>
+    <details id="rgNotify" class="rgNotify"><summary>🔔 Ping me for the next game <span class="note">(optional)</span></summary>
+      <div class="seg rgNKind"><button id="rgNSocial" class="on" type="button">@ handle</button><button id="rgNEmail" type="button">✉️ Email</button></div>
+      <div id="rgNSocialRow" class="socialRow"><select id="rgNPlatform" aria-label="Platform"></select><input id="rgNHandle" maxlength="120" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="@yourhandle"></div>
+      <input id="rgNEmailIn" class="hidden" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com">
+      <button id="rgNSave" class="primary">🔔 Ping me</button><p id="rgNMsg" class="note"></p>
+      <p class="note small">We only use this to tell you about the next game. Delete any time on request. <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
+    </details>
+    <div id="rgPanel" class="hidden">
+      <h3 id="rgWaiting"></h3>
+      <ul id="rgList" class="rgList"></ul>
+      <button id="rgNext" class="big primary">▶ Start next round with players who are in</button>
+      <div id="rgFbList"></div>
+    </div>
+  </div>
   <div id="recap" class="hidden">
     <div id="endMapWrap"><div id="endMap"></div><div id="heatLegend" class="heatLegend hidden"><span class="hl1">● hiders spent time</span> <span class="hl2">● hunters searched</span></div></div>
     <div class="replayBar"><button id="rPlay" class="small primary">▶ Replay</button><input id="rScrub" type="range" min="0" max="1000" value="1000"><span id="rTime" class="mono"></span></div>
@@ -222,4 +251,5 @@
 <script src="recapui.js"></script>
 <script src="reel.js"></script>
 <script src="plan.js"></script>
-<script src="tasks_ui.js"></script></body></html>
+<script src="tasks_ui.js"></script>
+<script src="regroup.js"></script></body></html>
