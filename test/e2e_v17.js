@@ -1,4 +1,4 @@
-// E2E v17: automatic proximity tag. Party mode (auto-tag 5 m). Host = hunter, Ana + Ben hide 300 m away.
+// E2E v17: automatic proximity tag. Party mode (auto-tag 3 m, ~10 s). Host = hunter, Ana + Ben hide 300 m away.
 // The hunter walks up to Ana: walk-by (no tag) -> out of range resets -> stays 5 s -> tagged. Ben is never revealed.
 // Real defaults: PORT=3017 node server.js & node test/e2e_v17.js [URL]
 const { chromium, devices } = require('playwright');
@@ -22,23 +22,23 @@ const LAT = 37.7596, LNG = -122.4269, M = 1 / 111320;
   const H = await join('Hunter', LAT - 300 * M); const code = (await H.textContent('#lobbyCode')).trim();
   const A = await join('Ana', LAT, code), B = await join('Ben', LAT + 400 * M, code);
   await H.waitForFunction(() => S.players.length === 3);
-  await H.evaluate(() => sendMsg({ type: 'settings', settings: { mode: 'party' } })); await H.waitForFunction(() => S.settings.autoTag === 5);
-  check(true, 'Party preset: auto-tag 5 m'); check(await H.isChecked('#sManualTag'), 'manual tag fallback on by default (host toggle)');
+  await H.evaluate(() => sendMsg({ type: 'settings', settings: { mode: 'party' } })); await H.waitForFunction(() => S.settings.autoTag === 3);
+  check(true, 'Party preset: auto-tag 3 m'); check(await H.isChecked('#sManualTag'), 'manual tag fallback on by default (host toggle)');
   await H.evaluate(() => sendMsg({ type: 'settings', settings: { hideSec: 0 } })); await H.waitForFunction(() => S.settings.hideSec === 0);
   await H.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await sleep(200);
   await H.evaluate(() => sendMsg({ type: 'start', force: true })); await A.waitForFunction(() => S.state === 'playing', null, { timeout: 15000 });
   await sleep(1000);
   // walk-by: one fix next to Ana, then gone
-  await go(H, 2); await sleep(1200); await go(H, -60); await sleep(2500);
+  await go(H, 1); await sleep(1200); await go(H, -60); await sleep(2500);
   check(!(await H.evaluate(() => S.players.find(p => p.name === 'Ana').caught)), 'walk-by does not tag');
   check(await H.isHidden('#tagRing'), 'ring reset after moving away');
   // stay close -> rings fill on both phones
-  await go(H, 2); for (let i = 0; i < 6; i++) { await sleep(700); await go(H, 2 + (i % 2) * 0.5); await go(A, 0); const v = await H.evaluate(() => getComputedStyle(document.getElementById('tagRing')).getPropertyValue('--p')); if (+v >= 0.4) break; }
+  const tc = Date.now(); await go(H, 1); for (let i = 0; i < 12; i++) { await sleep(700); await go(H, 1 + (i % 2) * 0.3); await go(A, 0); const v = await H.evaluate(() => getComputedStyle(document.getElementById('tagRing')).getPropertyValue('--p')); if (+v >= 0.4) break; }
   await A.waitForSelector('#tagRing.hider:not(.hidden)', { timeout: 5000 }); await H.waitForSelector('#tagRing.hunter:not(.hidden)', { timeout: 5000 });
   check((await H.textContent('#tagTxt')).includes('Closing in'), 'hunter sees only "Closing in…"');
   await A.screenshot({ path: 'shots/v17_hider_ring.png' }); await H.screenshot({ path: 'shots/v17_hunter_ring.png' });
-  await A.waitForFunction(() => S.players.find(p => p.id === S.you).caught, null, { timeout: 15000 });
-  check(true, 'staying within 5 m for ~5 s tags Ana (server)');
+  await A.waitForFunction(() => S.players.find(p => p.id === S.you).caught, null, { timeout: 25000 });
+  const took = Date.now() - tc; check(took >= 9000, `staying within 3 m for ~10 s tags Ana (server), took ${(took / 1000).toFixed(1)} s`);
   await sleep(800); await H.screenshot({ path: 'shots/v17_tagged.png' });
   const hm = await H.evaluate(() => window.__msgs.filter(m => m.type === 'tagProg'));
   check(hm.length > 0 && hm.every(m => Object.keys(m).sort().join() === 'p,role,type'), 'hunter tagProg messages carry only a number');

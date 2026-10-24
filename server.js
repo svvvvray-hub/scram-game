@@ -39,9 +39,9 @@ function makeCode(lobbies) {
 const FEATURES = ['decoy', 'chime', 'bounty', 'cam', 'compass'];
 // Game modes: presets over the individual toggles. Pings, the field and catch confirmation are always on.
 const MODES = {
-  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off', tasks: 'off', autoTag: 5 },
-  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal', tasks: 'normal', autoTag: 5 },
-  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos', tasks: 'normal', autoTag: 5 },
+  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off', tasks: 'off', autoTag: 3 },
+  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal', tasks: 'normal', autoTag: 3 },
+  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos', tasks: 'normal', autoTag: 3 },
   custom: { label: 'Custom', desc: 'Pick every toggle yourself.' },
 };
 const DEFAULT_GAME_SEC = clampNum0(process.env.GAME_MIN, 0.5, 360, 20) * 60; // dev/test: GAME_MIN=2 node server.js
@@ -640,9 +640,7 @@ function createApp(opts = {}) {
     if (ok) {
       const d = Math.max(0, Math.min(taskBonus(L), (L.settings.features.compass ? L.compassAt : L.endsAt) - now() - 1000)); L.endsAt -= d; if (L.compassAt) L.compassAt -= d;
       logEv(L, 'task', { id: h.id, ok: true, kind: k.type }, `🧩 ${h.name} completed a task (−${Math.round(d / 1000)} s)`);
-      event(L, '🧩 A hider completed a task!');
       send(h.ws, { type: 'taskResult', ok: true, kind: k.type, bonusSec: Math.round(d / 1000) });
-      for (const p of L.players.values()) if (isHunter(p)) send(p.ws, { type: 'taskDone' }); // no name, no location
       broadcast(L);
     } else {
       h.noisy = true; logEv(L, 'task', { id: h.id, ok: false, kind: k.type }, `🧩 ${h.name} ${reason === 'expired' ? 'ignored' : 'failed'} a task`);
@@ -664,9 +662,9 @@ function createApp(opts = {}) {
       else if (!k.startedAt && t > k.expiresAt) finishTask(L, h, false, 'expired'); }
   }
   // ---- v17 automatic proximity tag (server-only; positions never leave the server) ----
-  const TAG_MS = opts.tagMs ?? 5000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
+  const TAG_MS = opts.tagMs ?? 10000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
   // poor accuracy => longer contact AND a tighter distance
-  function tagRule(R, acc) { const bad = Math.max(0, acc - R); return { need: Math.round(TAG_MS * (1 + Math.min(1.4, bad / 10))), within: Math.max(R * 0.6, R - bad * 0.1) }; }
+  function tagRule(R, acc) { const bad = Math.max(0, acc - R); return { need: Math.round(TAG_MS * (1 + Math.min(1, bad / 10))), within: Math.max(R * 0.6, R - bad * 0.1) }; }
   function tickTags(L) {
     const R = L.settings.autoTag, t = now(); if (!L.tags) L.tags = new Map();
     if (!R) return;
@@ -821,7 +819,7 @@ function createApp(opts = {}) {
           if ('teammates' in s) L.settings.teammates = !!s.teammates;
           if (['off', 'normal', 'chaos'].includes(s.powerups)) L.settings.powerups = s.powerups;
           if (['off', 'normal', 'often'].includes(s.tasks)) L.settings.tasks = s.tasks;
-          if ([0, 3, 5, 8].includes(s.autoTag)) L.settings.autoTag = s.autoTag;
+          if ([0, 2, 3, 5].includes(s.autoTag)) L.settings.autoTag = s.autoTag;
           if ('manualTag' in s) L.settings.manualTag = !!s.manualTag;
           if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];

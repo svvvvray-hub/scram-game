@@ -73,7 +73,6 @@
     onMsg(m) {
       if (m.type === 'taskOffer') { navigator.vibrate?.(60); toast('🧩 New task! Tap the Task button to earn Extra Time', 3500); return true; }
       if (m.type === 'taskResult') { result(m); return true; }
-      if (m.type === 'taskDone') { toast('🧩 A hider completed a task!', 3500); return true; }
       return false;
     },
     onState(S) {

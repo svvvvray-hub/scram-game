@@ -685,7 +685,7 @@ function modeBullets(st) {
   const f = st.features || {}, ex = [f.decoy && '👻 decoys', f.bounty && '💰 bounties', st.powerups !== 'off' && `🎁 power-ups${st.powerups === 'chaos' ? ' (chaos)' : ''}`, st.tasks && st.tasks !== 'off' && `🧩 hider tasks${st.tasks === 'often' ? ' (often)' : ''}`, f.compass && '🧭 sudden-death compass', f.cam && '📷 cam peek'].filter(Boolean);
   return [`📡 Ping every ${st.pingSec >= 60 ? (st.pingSec / 60) + ' min' : st.pingSec + ' s'} · ${Math.round(st.gameSec / 60)} min game`,
     ex.length ? `${(MODES[st.mode] || MODES.custom).label}: ${ex.join(', ')}` : `${(MODES[st.mode] || MODES.custom).label}: no extras, ${f.chime ? '🔔 chime within 40 m' : 'pure hide & seek'}`,
-    (S.field ? '🟨 Stay inside the yellow boundary (30 s grace)' : '🙌 Tag in real life, then confirm in the app') + (st.autoTag ? ` · 📍 auto-tag within ${st.autoTag} m for ~5 s` : '')];
+    (S.field ? '🟨 Stay inside the yellow boundary (30 s grace)' : '🙌 Tag in real life, then confirm in the app') + (st.autoTag ? ` · 📍 auto-tag within ${st.autoTag} m for ~10 s` : '')];
 }
 const QUIET = localStorage.getItem('scramQuiet') === '1'; // test hook (legacy e2e suites): skip role card + coach tips
 function showRoleCard(kind) {

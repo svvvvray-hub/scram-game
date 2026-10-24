@@ -43,10 +43,6 @@ const LAT = 37.7596, LNG = -122.4269;
   for (let i = 0; i < 3; i++) { const p = probs[i]; await A.fill('#tkM' + i, String(p.op === '+' ? p.a + p.b : p.op === '×' ? p.a * p.b : p.a - p.b)); }
   await A.click('#tkSubmit'); await A.waitForFunction(() => window.__msgs.some(m => m.type === 'taskResult'));
   check(await A.evaluate(() => window.__msgs.filter(m => m.type === 'taskResult')[0].ok), 'math solved -> server accepts');
-  await H.waitForFunction(() => window.__msgs.some(m => m.type === 'taskDone'));
-  await H.waitForSelector('#toast.show'); check((await H.textContent('#toast')).includes('A hider completed a task!'), 'hunter toast: "A hider completed a task!"');
-  await H.screenshot({ path: 'shots/v16_hunter_toast.png' });
-  check(!(await H.evaluate(() => JSON.stringify(window.__msgs.filter(m => m.type === 'taskDone')).match(/Ana|lat/))), 'toast message has no name / location');
   await H.waitForFunction(e => S.endsAt <= e - 29000, endsAt0); check(true, 'Extra Time: game clock −30 s');
   // ---- 2. slide (dismiss + reopen)
   await A.waitForFunction(() => S.task && S.task.type === 'slide', null, { timeout: 20000 });
@@ -81,7 +77,7 @@ const LAT = 37.7596, LNG = -122.4269;
   await B.waitForFunction(() => window.__msgs.some(m => m.type === 'taskResult'), null, { timeout: 30000 });
   const br = await B.evaluate(() => window.__msgs.find(m => m.type === 'taskResult'));
   check(!br.ok && br.reason === 'expired', 'ignored task expires -> failure (next ping noisy)');
-  check(await H.evaluate(() => window.__msgs.filter(m => m.type === 'taskDone').length) === 4, 'hunter got 4 anonymous toasts');
+  check(!(await H.evaluate(() => window.__msgs.some(m => m.type === 'taskDone') || JSON.stringify(window.__msgs).includes('completed a task'))), 'hunter got no task-completed notification');
   check(errs.length === 0, 'no page errors ' + errs.join(' | '));
   await browser.close(); console.log(fails ? `${fails} FAILED` : 'ALL PASS'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -63,7 +63,7 @@ test('tasks: modes default; settings validated', async () => {
   done(a, [host, ...ps]);
 });
 
-test('tasks: wire completes -> Extra Time, hunters get an anonymous toast, hunters never see task data', async () => {
+test('tasks: wire completes -> Extra Time; hunters get no notification and never see task data', async () => {
   const { a, host, ps } = await game({ taskTimes: [50], taskType: 'wire' });
   const [h1, h2] = ps; await until(() => h1.state.task && h2.state.task);
   assert.equal(host.state.task, undefined); assert.ok(!host.msgs.some(m => m.type === 'taskOffer'));
@@ -73,10 +73,9 @@ test('tasks: wire completes -> Extra Time, hunters get an anonymous toast, hunte
   h1.send({ type: 'taskSubmit', id: k.id, answer: Object.fromEntries(Tasks.COLORS.map(c => [c, k.data.right.indexOf(c)])) });
   await until(() => last(h1, 'taskResult'));
   assert.equal(last(h1, 'taskResult').ok, true); assert.equal(last(h1, 'taskResult').bonusSec, 30);
-  await until(() => last(host, 'taskDone')); const td = last(host, 'taskDone'); assert.deepEqual(Object.keys(td), ['type']);
-  await until(() => host.state.endsAt === endsBefore - 30000);
+  await until(() => host.state.endsAt === endsBefore - 30000); await sleep(100);
+  assert.ok(!host.msgs.some(m => m.type === 'taskDone')); assert.ok(!JSON.stringify(host.msgs).includes('completed a task'));
   assert.ok(!JSON.stringify(host.msgs.filter(m => m.type !== 'state')).includes('P0'));
-  assert.ok(!h2.msgs.some(m => m.type === 'taskDone'));
   done(a, [host, ...ps]);
 });
 
@@ -157,9 +156,11 @@ test('autotag: poor accuracy needs longer + tighter contact; very poor never aut
   const b = await tagGame({}, { autoTag: 0 }); for (let i = 0; i < 8; i++) { at(b.host, 0); at(b.ps[0], 1); await sleep(150); }
   assert.ok(!b.host.state.players.find(p => p.id === b.ps[0].joined.id).caught); done(b.a, [b.host, ...b.ps]);
 });
-test('autotag: manual tag toggle; presets default 5 m', async () => {
+test('autotag: manual tag toggle; presets default 3 m; radius options 2/3/5/off', async () => {
   const a = await boot({ defaultMode: 'classic' }); const { host, ps } = await lobby(a, 3);
-  assert.equal(host.state.settings.autoTag, 5); assert.equal(host.state.settings.manualTag, true);
+  assert.equal(host.state.settings.autoTag, 3); assert.equal(host.state.settings.manualTag, true);
+  host.send({ type: 'settings', settings: { autoTag: 8 } }); host.send({ type: 'settings', settings: { autoTag: 2 } }); await until(() => host.state.settings.autoTag === 2);
+  host.send({ type: 'settings', settings: { autoTag: 8 } }); await sleep(100); assert.equal(host.state.settings.autoTag, 2);
   host.send({ type: 'settings', settings: { manualTag: false, hideSec: 0 } }); await until(() => host.state.settings.manualTag === false);
   host.send({ type: 'role', id: ps[0].joined.id, role: 'hunter' }); host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
   ps[0].send({ type: 'catch', id: ps[1].joined.id }); ps[1].send({ type: 'caughtSelf' }); await sleep(200);
