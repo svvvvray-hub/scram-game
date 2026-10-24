@@ -883,7 +883,7 @@ addEventListener('resize', () => { if (rv && !rv.done) sizeRadar(); });
 function tagRing(m) {
   const e = $('tagRing'), p = Math.max(0, Math.min(1, +m.p || 0)), hunter = m.role === 'hunter';
   const d = m.dbg; $('tagDbg').classList.toggle('hidden', !d);
-  if (d) $('tagDbg').textContent = `🛠 d ${(+d.d).toFixed(1)} m · ±${Math.round(d.accA)}/±${Math.round(d.accB)} m · lim ${(+d.lim).toFixed(1)} m · close ${Math.round(d.pct || 0)}% · zone ${d.zone ?? 0}s${window.gpsBoost && me()?.role === 'hunter' ? ' · 📍fast' : ''}`;
+  if (d) $('tagDbg').textContent = `🛠 d ${(+d.d).toFixed(1)} m · ±${Math.round(d.accA)}/±${Math.round(d.accB)} m · lim ${(+d.lim).toFixed(1)} m · close ${Math.round(d.pct || 0)}% · ±${d.sd ?? '?'} m est · ${d.ev || ''}${window.gpsBoost && me()?.role === 'hunter' ? ' · 📍fast' : ''}`;
   if (!S || S.state !== 'playing' || (!p && !d)) { e.classList.add('hidden'); tagRing.last = 0; return; }
   if (!p) { e.classList.remove('hidden'); e.className = 'dbgOnly'; e.style.setProperty('--p', 0); $('tagPct').textContent = '🛠'; $('tagTxt').textContent = 'Tag debug (host only)'; return; }
   e.classList.remove('hidden'); e.className = hunter ? 'hunter' : 'hider';

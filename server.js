@@ -738,7 +738,7 @@ function createApp(opts = {}) {
           catchHider(L, h, x); if (L.state !== 'playing') return; break;
         }
         if (g.ratio > 0) { boost.add(h.id); boost.add(x.id); } // anything close in the window: fast GPS on both phones
-        if (g.acc > 0) { const p = Math.min(0.99, g.acc / o.tagMs); bump(h.id, p, res === 'pause', g.dbg); bump(x.id, p, res === 'pause', g.dbg); }
+        if (g.acc > 0) { const p = Math.min(0.99, g.acc / o.tagMs); bump(h.id, p, false, g.dbg); bump(x.id, p, false, g.dbg); /* v21: only a stale-GPS gap shows ⏸; weak or far evidence holds / drains */ }
         else if (g.dbg && (g.ratio > 0 || L.settings.tagDebug)) { for (const id of [h.id, x.id]) if (!dbg.has(id) || (dbg.get(id).d ?? 1e9) > g.dbg.d) dbg.set(id, g.dbg); }
       }
     }

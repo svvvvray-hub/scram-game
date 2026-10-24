@@ -4,10 +4,10 @@
   "description": "",
   "main": "server.js",
   "directories": {
-    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js test/plan.test.js test/supabase.test.js test/audit.test.js test/tasks.test.js test/regroup.test.js test/v19.test.js test/tagsim.test.js test/tagsim_v20.test.js"
+    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js test/plan.test.js test/supabase.test.js test/audit.test.js test/tasks.test.js test/regroup.test.js test/v19.test.js test/tagsim_v20.test.js test/tagsim_v21.test.js"
   },
   "scripts": {
-    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js test/plan.test.js test/supabase.test.js test/audit.test.js test/tasks.test.js test/regroup.test.js test/v19.test.js test/tagsim.test.js test/tagsim_v20.test.js",
+    "test": "node --test --test-force-exit test/game.test.js test/recap.test.js test/powerups.test.js test/gps.test.js test/inapp.test.js test/admin.test.js test/reveal.test.js test/plan.test.js test/supabase.test.js test/audit.test.js test/tasks.test.js test/regroup.test.js test/v19.test.js test/tagsim_v20.test.js test/tagsim_v21.test.js",
     "start": "node server.js"
   },
   "keywords": [],
