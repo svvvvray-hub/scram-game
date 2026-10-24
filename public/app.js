@@ -187,8 +187,8 @@ function enemyPts() { const m = me(); if (!S || !m) return []; if (m.role === 'h
 function maybeSend(force = false) {
   if (!myLoc) return;
   const running = !!S && (S.state === 'playing' || S.state === 'hiding');
-  const d = GpsThrottle.decide({ now: Date.now(), loc: myLoc, last: lastSent, enemies: running ? enemyPts() : [], hot: running ? [...(S.drops || []), ...(S.bounty ? [S.bounty] : [])] : [], urgent: running && !!(S.compass || S.pu?.pickup || window.taskHold), force });
-  saverOn = running && d.saver; window.gpsSaver = saverOn; $('saverPill').classList.toggle('hidden', !saverOn);
+  const d = GpsThrottle.decide({ now: Date.now(), loc: myLoc, last: lastSent, enemies: running ? enemyPts() : [], hot: running ? [...(S.drops || []), ...(S.bounty ? [S.bounty] : [])] : [], urgent: running && !!(S.compass || S.pu?.pickup || window.taskHold || window.gpsBoost), force });
+  saverOn = running && d.saver; window.gpsSaver = saverOn; $('saverPill').classList.toggle('hidden', !saverOn); $('fastPill').classList.toggle('hidden', !(running && window.gpsBoost));
   if (d.send) { sendLoc(myLoc); lastSent = { lat: myLoc.lat, lng: myLoc.lng, t: Date.now() }; window.gpsSends = (window.gpsSends || 0) + 1; }
 }
 function freshFix() { // server asks ~5 s before a ping: upload a fresh, high-accuracy fix right away
@@ -197,6 +197,7 @@ function freshFix() { // server asks ~5 s before a ping: upload a fresh, high-ac
 }
 setInterval(() => maybeSend(), 1000);
 function setGps(t) { $('gpsStatus').textContent = t; $('btnGps').classList.toggle('hidden', t.startsWith('✅')); }
+$('dbgBtn').onclick = () => { const on = !S.settings?.tagDebug; sendMsg({ type: 'tagDebug', on }); toast(on ? '🛠 Tag debug on: walk up to a player to see distance / accuracy / close % on the ring' : '🛠 Tag debug off', 3000); };
 $('btnGps').onclick = () => { watchId !== null && navigator.geolocation.clearWatch(watchId); watchId = null; startGps(); };
 
 // Screen wake lock: held while a round is running or a recording is on; re-acquired on visibilitychange, released at game end.
@@ -527,6 +528,7 @@ function marker(key, loc, kind, label, opts = {}) {
   l.m.setTooltipContent(label); l.seen = true;
 }
 function renderGame() {
+  { const host = S.you === S.host; $('dbgBtn').classList.toggle('hidden', !host); $('dbgBtn').classList.toggle('on', !!S.settings?.tagDebug); }
   if (S.round !== lastRound && map) { for (const k in layers) { map.removeLayer(layers[k].c); map.removeLayer(layers[k].m); } layers = {}; map._fitted = false; }
   lastRound = S.round;
   show('game'); ensureMap(); setTimeout(() => map.invalidateSize(), 50);
@@ -879,10 +881,12 @@ addEventListener('resize', () => { if (rv && !rv.done) sizeRadar(); });
 // v17 auto-tag progress ring. Hunters only ever get a number ("closing in"), never who/where/direction.
 function tagRing(m) {
   const e = $('tagRing'), p = Math.max(0, Math.min(1, +m.p || 0)), hunter = m.role === 'hunter';
-  if (!p || !S || S.state !== 'playing') { e.classList.add('hidden'); tagRing.last = 0; return; }
+  const d = m.dbg; $('tagDbg').classList.toggle('hidden', !d);
+  if (d) $('tagDbg').textContent = `🛠 d ${(+d.d).toFixed(1)} m · ±${Math.round(d.accA)}/±${Math.round(d.accB)} m · lim ${(+d.lim).toFixed(1)} m · close ${Math.round(d.pct || 0)}% · zone ${d.zone ?? 0}s${window.gpsBoost ? ' · 📍fast' : ''}`;
+  if (!S || S.state !== 'playing' || (!p && !d)) { e.classList.add('hidden'); tagRing.last = 0; return; }
+  if (!p) { e.classList.remove('hidden'); e.className = 'dbgOnly'; e.style.setProperty('--p', 0); $('tagPct').textContent = '🛠'; $('tagTxt').textContent = 'Tag debug (host only)'; return; }
   e.classList.remove('hidden'); e.className = hunter ? 'hunter' : 'hider';
   e.style.setProperty('--p', p); $('tagPct').textContent = m.paused ? '⏸' : Math.round(p * 100) + '%'; e.classList.toggle('paused', !!m.paused);
   $('tagTxt').textContent = m.paused ? '📶 Paused: waiting for GPS… keep your screen on' : hunter ? '🎯 Closing in… stay close' : '⚠️ A hunter is tagging you — move away!';
-  const d = m.dbg; if (d) $('tagTxt').textContent += ` · 🛠 d ${(+d.d).toFixed(1)} m · ±${Math.round(d.accA)}/±${Math.round(d.accB)} m · lim ${(+d.lim).toFixed(1)} m · close ${Math.round(d.pct)}%`;
   if (!hunter && (!tagRing.last || Date.now() - tagRing.last > 2000)) { navigator.vibrate?.(80); tagRing.last = Date.now(); }
 }

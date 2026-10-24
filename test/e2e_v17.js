@@ -34,6 +34,10 @@ const LAT = 37.7596, LNG = -122.4269, M = 1 / 111320;
   check(await H.isHidden('#tagRing'), 'ring reset after moving away');
   // stay close -> rings fill on both phones
   const tc = Date.now(); await go(H, 1); for (let i = 0; i < 12; i++) { await sleep(700); await go(H, 1 + (i % 2) * 0.3); await go(A, 0); const v = await H.evaluate(() => getComputedStyle(document.getElementById('tagRing')).getPropertyValue('--p')); if (+v >= 0.4) break; }
+  check(await H.isVisible('#fastPill') && await A.isVisible('#fastPill') && !(await H.isVisible('#saverPill')), 'v20: 📍 fast GPS on both phones (Saver overridden)');
+  check(await H.isVisible('#dbgBtn') && !(await A.isVisible('#dbgBtn')), 'v20: 🛠 Debug button for the host only');
+  await H.click('#dbgBtn'); await H.waitForSelector('#tagDbg:not(.hidden)', { timeout: 5000 }); check(/d [\d.]+ m .*close \d+%/.test(await H.textContent('#tagDbg')) && await A.isHidden('#tagDbg'), 'v20: debug overlay on the host ring only: ' + await H.textContent('#tagDbg'));
+  await H.screenshot({ path: 'shots/v20_fast_gps_debug.png' }); await A.screenshot({ path: 'shots/v20_hider_fast_gps.png' });
   await A.waitForSelector('#tagRing.hider:not(.hidden)', { timeout: 5000 }); await H.waitForSelector('#tagRing.hunter:not(.hidden)', { timeout: 5000 });
   check((await H.textContent('#tagTxt')).includes('Closing in'), 'hunter sees only "Closing in…"');
   await A.screenshot({ path: 'shots/v17_hider_ring.png' }); await H.screenshot({ path: 'shots/v17_hunter_ring.png' });
@@ -42,7 +46,7 @@ const LAT = 37.7596, LNG = -122.4269, M = 1 / 111320;
   const took = Date.now() - tc; check(took >= 9000, `staying within 3 m for ~10 s tags Ana (server), took ${(took / 1000).toFixed(1)} s`);
   await sleep(800); await H.screenshot({ path: 'shots/v17_tagged.png' });
   const hm = await H.evaluate(() => window.__msgs.filter(m => m.type === 'tagProg'));
-  check(hm.length > 0 && hm.every(m => Object.keys(m).sort().join() === 'p,paused,role,type'), 'hunter tagProg messages carry only a number');
+  check(hm.length > 0 && hm.every(m => Object.keys(m).filter(k => k !== 'dbg').sort().join() === 'p,paused,role,type'), 'hunter tagProg messages carry only a number (+ dbg on the host’s own phone, debug on)');
   const leak = await H.evaluate(() => window.__msgs.filter(m => m.type !== 'state' && m.type !== 'ping' && m.type !== 'recap').map(JSON.stringify).join('')); 
   check(!leak.includes(String((LAT + 400 * M).toFixed(4))), 'Ben\'s position never sent to the hunter');
   check(!(await H.evaluate(() => S.players.find(p => p.name === 'Ben').caught)), 'Ben (far away) untouched');

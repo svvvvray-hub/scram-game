@@ -66,7 +66,8 @@ ul{padding-left:1.2em}li{margin:3px 0}
 <ul><li>Both phones show a ring that fills up. The hider sees “A hunter is tagging you”. The hunter only sees “Closing in…”, with no direction, distance or name.</li>
 <li>Stand side by side and the tag usually lands in about 10–15 s. The server smooths each phone’s last few GPS fixes and allows for GPS accuracy (range + half of both phones’ accuracy, capped), and the ring keeps filling while most of the last 10 s counted as close. A 3 m/s jog-by or walking past 10 m away never tags.</li>
 <li>Clearly move apart (more than about 15 m for 3 s) and the ring resets. If a phone’s GPS goes quiet for a moment (up to about 8 s), the ring <b>pauses</b> (⏸) instead of resetting.</li>
-<li>While a tag is in progress, both phones send GPS every second. Keep the screen on and the app open.</li>
+<li>When a hunter might be within about 40 m, both phones switch to <b>📍 fast GPS</b> (a fresh, full-accuracy fix every second, overriding 🔋 Saver) so the tag isn't starved of updates. It switches back about 15 s after you're apart. Keep the screen on and the app open.</li>
+<li>Weak GPS (a big accuracy circle) is averaged over more fixes, and once you've stayed close for about 10 s the allowed gap widens a little. Walking past at 12 m or more never tags.</li>
 <li>If the hider’s GPS stays quiet after the ring passed 30%, the hunter gets a <b>Tap to confirm tag</b> button. The hider is asked “Were you tagged?”. If they don’t answer within 15 s, the host decides.</li><li>Walking past doesn’t count. It needs continuous contact confirmed by more than one GPS update.</li>
 <li>With very poor accuracy (worse than about ±25 m), auto-tag pauses and you use the manual buttons.</li>
 <li>The host can keep or remove the manual <b>Catch / I got caught</b> buttons as a fallback. The host can always confirm a catch.</li></ul></details>

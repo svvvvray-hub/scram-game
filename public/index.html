@@ -59,6 +59,7 @@
   </div>
   <div id="hostPanel" class="hidden">
     <h3>Settings</h3>
+    <label class="chk dbgChk"><input id="sTagDebug" type="checkbox"> 🛠 Tag debug overlay (host only: distance, accuracy, close % on the tag ring; also the 🛠 button in-game)</label>
     <div class="grid">
       <label>Game length (min)<input id="sGame" type="number" min="1" step="1"></label>
       <label>Ping every (sec)<input id="sPing" type="number" min="5" step="5"></label>
@@ -71,8 +72,7 @@
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
     <label class="chk"><input id="sMates" type="checkbox" checked> Teammates visible (hiders see fellow hiders live)</label>
     <label class="chk"><input id="sManualTag" type="checkbox" checked> Manual tag buttons (Catch / I got caught) as a fallback</label>
-    <label class="chk"><input id="sTagDebug" type="checkbox"> 🛠 Tag debug overlay (host only: distance, accuracy, close %)</label>
-    <div id="customBox" class="hidden">
+        <div id="customBox" class="hidden">
     <label>🎁 Power-up drops<select id="sPower"><option value="off">Off</option><option value="normal">Normal (every 3 min)</option><option value="chaos">Chaos (every 90 s)</option></select></label>
     <label>🧩 Hider tasks<select id="sTasks"><option value="off">Off</option><option value="normal">Normal (~3 per game)</option><option value="often">Often (~5 per game)</option></select></label>
     <label>📍 Auto-tag<select id="sAutoTag"><option value="0">Off</option><option value="2">2 m (strong GPS only)</option><option value="3">3 m</option><option value="5">5 m</option></select></label>
@@ -112,7 +112,7 @@
 <section id="game" class="screen hidden full">
   <div id="hud"><div id="roleBadge"></div><div id="clock"></div>
     <div id="pingWrap"><svg class="pingRing" viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="21"/><circle id="pingArc" class="arc" cx="24" cy="24" r="21"/></svg><div id="pingClock"></div></div>
-    <span id="saverPill" class="saverPill hidden" title="Battery saver: you're still and no one's near, so GPS uploads slow to every 15 s">🔋 Saver</span></div>
+    <span id="saverPill" class="saverPill hidden" title="Battery saver: you're still and no one's near, so GPS uploads slow to every 15 s">🔋 Saver</span><span id="fastPill" class="saverPill fastPill hidden" title="Someone may be close: GPS updates every second at full accuracy (overrides Saver)">📍 fast GPS</span><button id="dbgBtn" class="small hidden" title="Host only: tag debug overlay (distance, accuracy, close %)">🛠 Debug</button></div>
   <div id="banner" class="hidden"></div>
   <div id="oob" class="hidden"></div>
   <div id="map"></div>
@@ -223,7 +223,7 @@
 <div id="reveal" class="hidden" aria-live="assertive"><canvas id="rvRadar"></canvas><div id="rvPulse"></div><div id="rvStage"></div><button id="rvSkip" class="hidden">Skip</button></div>
 <div id="coach" class="coach" role="status" aria-live="polite"><span id="coachTxt"></span><button id="coachX" aria-label="Dismiss tip">✕</button></div>
 <div id="toast" class="toast"></div>
-<div id="tagRing" class="hidden" aria-live="polite"><div class="tr"><span id="tagPct"></span></div><b id="tagTxt"></b></div>
+<div id="tagRing" class="hidden" aria-live="polite"><div class="tr"><span id="tagPct"></span></div><b id="tagTxt"></b><small id="tagDbg" class="hidden"></small></div>
 <button id="tagFbBtn" class="hidden">✅ Tap to confirm tag <small id="tagFbLeft"></small></button>
 <div id="tagAsk" class="tagModal hidden" role="alertdialog" aria-labelledby="tagAskQ"><b id="tagAskQ">Were you tagged?</b><p id="tagAskBy" class="note"></p><div class="seg"><button id="tagAskYes" class="primary">Yes, I was tagged</button><button id="tagAskNo">No</button></div><small id="tagAskLeft" class="note"></small></div>
 <div id="tagHostAsk" class="tagModal hidden" role="alertdialog"><b>Confirm a tag?</b><p id="tagHostTxt" class="note"></p><div class="seg"><button id="tagHostYes" class="primary">Confirm tag</button><button id="tagHostNo">Not tagged</button></div></div>

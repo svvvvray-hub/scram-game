@@ -33,7 +33,7 @@ const Walk = require('../walk');
 const Field = require('../public/field');
 const last = (c, t) => [...c.msgs].reverse().find(m => m.type === t);
 const at = (c, dm, acc = 4) => c.send({ type: 'loc', lat: 52 + dm / 111320, lng: 4, acc });
-const T = { tagWindowMs: 2000, tagMinSamples: 3, tagMs: 1000, tagLiveMs: 400, tagGapMs: 1200, tagGraceMs: 300, tagHiderMs: 400, tagClaimMs: 3000 };
+const T = { tagWindowMs: 2000, tagMinSamples: 3, tagZoneMs: 0, tagMs: 1000, tagLiveMs: 400, tagGapMs: 1200, tagGraceMs: 300, tagHiderMs: 400, tagClaimMs: 3000 };
 async function tagGame(o = {}) {
   const a = await boot({ ...T, ...o }); const { host, ps } = await lobby(a, 3);
   host.send({ type: 'settings', settings: { hideSec: 0, gameSec: 1200, autoTag: 5 } });
@@ -167,4 +167,20 @@ test('v19 tag debug overlay: host-only (dist / accuracies / close%), never to ot
   assert.ok(!hider.msgs.some(m => m.dbg) && !other.msgs.some(m => m.dbg));
   hider.send({ type: 'tagDebug', on: false }); await sleep(50); assert.equal([...a.lobbies.values()][0].settings.tagDebug, true, 'host only');
   done(a, [host, ...ps]);
+});
+
+test('v20 approach: one Saver-rate fix each within ~40 m (accuracy-inflated) -> fast GPS on both phones before any ring progress; far players stay normal', async () => {
+  const { a, host, hunter, hider, L } = await tagGame();
+  at(host, 900); at(hider, 0, 20); at(hunter, 50, 5); // single stale-ish fixes, 50 m apart, hider ±20 m: 50-25 <= 40
+  await until(() => last(hunter, 'gpsBoost')?.on && last(hider, 'gpsBoost')?.on);
+  assert.ok(!hunter.msgs.some(m => m.type === 'tagProg' && m.p > 0), 'no ring progress yet');
+  assert.ok(!last(host, 'gpsBoost')?.on, 'the far player is not boosted');
+  assert.ok(!hunter.msgs.some(m => m.type === 'gpsBoost' && (m.lat || m.d || m.id)), 'boost carries no position / distance / id');
+  done(a, [host, hunter, hider]);
+});
+test('v20 approach: 200 m apart -> no fast GPS', async () => {
+  const { a, host, hunter, hider } = await tagGame();
+  at(host, 900); at(hider, 0, 10); at(hunter, 200, 5); await sleep(600);
+  assert.ok(!last(hunter, 'gpsBoost')?.on && !last(hider, 'gpsBoost')?.on);
+  done(a, [host, hunter, hider]);
 });

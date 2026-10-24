@@ -681,7 +681,7 @@ function createApp(opts = {}) {
       else if (!k.startedAt && t > k.expiresAt) finishTask(L, h, false, 'expired'); }
   }
   // ---- v17 automatic proximity tag (server-only; positions never leave the server) ----
-  const TAG_MS = opts.tagMs ?? 10000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
+  const NEAR_HOLD = opts.tagNearHoldMs ?? 15000, TAG_MS = opts.tagMs ?? 10000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
   // v19: GPS gaps (no fresh fix from a phone) PAUSE the ring; only confirmed out-of-range positions reset it (after the grace).
   const TAG_LIVE = opts.tagLiveMs ?? 4500, TAG_GAP = opts.tagGapMs ?? 8000, TAG_FB_MIN = 0.3, FB_CLAIM_MS = opts.tagClaimMs ?? 30000, FB_HIDER_MS = opts.tagHiderMs ?? 15000, FB_HOST_MS = 60000;
   function tagFallback(L, h, x) { // hider's GPS went quiet mid-tag: hunter may claim, hider confirms, else the host decides
@@ -710,7 +710,7 @@ function createApp(opts = {}) {
     const R = L.settings.autoTag, t = now(); if (!L.tags) L.tags = new Map();
     tickTagFb(L);
     if (!R) return;
-    const o = { ...TagCore.DEF, R, tagMs: TAG_MS, farMs: Math.min(TagCore.DEF.farMs, TAG_GRACE * 2), windowMs: opts.tagWindowMs ?? TagCore.DEF.windowMs, minSamples: opts.tagMinSamples ?? TagCore.DEF.minSamples };
+    const o = { ...TagCore.DEF, R, tagMs: TAG_MS, farMs: Math.min(TagCore.DEF.farMs, TAG_GRACE * 2), windowMs: opts.tagWindowMs ?? TagCore.DEF.windowMs, minSamples: opts.tagMinSamples ?? TagCore.DEF.minSamples, zoneMs: opts.tagZoneMs ?? TagCore.DEF.zoneMs };
     const hunters = [...L.players.values()].filter(p => isHunter(p) && p.loc);
     const prog = new Map(), paused = new Set(), boost = new Set(), dbg = new Map();
     const bump = (id, v, pz, d) => { if (v >= (prog.get(id) || 0)) { prog.set(id, v); if (pz) paused.add(id); else paused.delete(id); if (d) dbg.set(id, d); } };
@@ -719,6 +719,10 @@ function createApp(opts = {}) {
       for (const x of hunters) {
         const key = x.id + '>' + h.id; let g = L.tags.get(key); if (!g) { g = TagCore.newPair(t); L.tags.set(key, g); } // every hunter x hider pair is tracked (history matters)
         const hAge = t - h.loc.recvAt, xAge = t - x.loc.recvAt, live = hAge <= TAG_LIVE && xAge <= TAG_LIVE;
+        // v20 approach phase: a hunter may be within ~40 m (generous: minus both accuracies + walking since the fixes) ->
+        // fast GPS on both phones now, before any ring progress (Saver's 15 s uploads would starve the tag of samples)
+        if (TagCore.near(h.loc, x.loc, t, o)) g.nearUntil = t + NEAR_HOLD;
+        if (t < (g.nearUntil || 0)) { boost.add(h.id); boost.add(x.id); }
         if (!live) { // GPS gap: pause, don't reset
           g.lastT = t; if (g.acc <= 0) continue; const p = Math.min(0.99, g.acc / o.tagMs);
           if (t - (g.lastSampleT || t) > TAG_GAP) { g.acc = 0; g.samples = []; if (hAge > TAG_LIVE && p >= TAG_FB_MIN) tagFallback(L, h, x); continue; }
@@ -735,7 +739,7 @@ function createApp(opts = {}) {
         }
         if (g.ratio > 0) { boost.add(h.id); boost.add(x.id); } // anything close in the window: fast GPS on both phones
         if (g.acc > 0) { const p = Math.min(0.99, g.acc / o.tagMs); bump(h.id, p, res === 'pause', g.dbg); bump(x.id, p, res === 'pause', g.dbg); }
-        else if (g.dbg && g.ratio > 0) { if (!dbg.has(h.id)) dbg.set(h.id, g.dbg); if (!dbg.has(x.id)) dbg.set(x.id, g.dbg); }
+        else if (g.dbg && (g.ratio > 0 || L.settings.tagDebug)) { for (const id of [h.id, x.id]) if (!dbg.has(id) || (dbg.get(id).d ?? 1e9) > g.dbg.d) dbg.set(id, g.dbg); }
       }
     }
     for (const k of [...L.tags.keys()]) { const [a, b] = k.split('>'); const x = L.players.get(a), h = L.players.get(b); if (!x || !h || !isHunter(x) || h.caught || h.role !== 'hider') L.tags.delete(k); }

@@ -119,7 +119,7 @@ test('tasks: hold still without GPS fixes fails; caught hider loses the task', a
 
 // ---- v17 automatic proximity tag
 async function tagGame(o = {}, st = {}) {
-  const a = await boot({ tagMs: 600, tagGraceMs: 300, tagWindowMs: 1500, tagMinSamples: 3, ...o }); const { host, ps } = await lobby(a, 3);
+  const a = await boot({ tagMs: 600, tagGraceMs: 300, tagWindowMs: 1500, tagMinSamples: 3, tagZoneMs: 0, ...o }); const { host, ps } = await lobby(a, 3);
   host.send({ type: 'settings', settings: { hideSec: 0, gameSec: 1200, autoTag: 5, ...st } });
   host.send({ type: 'role', id: host.joined.id, role: 'hunter' }); host.send({ type: 'start' });
   await until(() => host.state.state === 'playing');
