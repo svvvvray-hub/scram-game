@@ -12,7 +12,8 @@
   function boost(on) {
     window.gpsBoost = on; clearInterval(boostT); boostT = 0;
     if (on) { boostT = setInterval(boostFix, 1000); boostFix(); typeof wake === 'function' && wake();
-      if (Date.now() - nudged > 60000) { nudged = Date.now(); toast('📶 Tag in progress: keep your screen on and the app open', 3500); } }
+      const hunter = typeof me === 'function' && me()?.role === 'hunter';
+      if (hunter && Date.now() - nudged > 60000) { nudged = Date.now(); toast('📶 Tag in progress: keep your screen on and the app open', 3500); } }
   }
   function tickUI() {
     if (fbKey) { const s = Math.max(0, Math.ceil((fbExp - snow()) / 1000)); $('tagFbLeft').textContent = s + ' s'; if (!s) hideFb(); }
@@ -22,7 +23,7 @@
   const hideFb = () => { fbKey = null; $('tagFbBtn').classList.add('hidden'); };
   window.TagFx = {
     onMsg(m) {
-      if (m.type === 'gpsBoost') { boost(!!m.on); return true; }
+      if (m.type === 'gpsCfg') { const on = m.intervalMs <= 1000; if (on !== !!window.gpsBoost) boost(on); return true; } // routine setting; fast mode stays silent on hiders' phones
       if (m.type === 'tagFallback') { fbKey = m.key; fbExp = m.expiresAt; $('tagFbBtn').disabled = false; $('tagFbBtn').firstChild.textContent = '✅ Tap to confirm tag '; $('tagFbBtn').classList.remove('hidden');
         navigator.vibrate?.([80, 60, 80]); toast('📶 The hider’s GPS went quiet. Tagged them in real life? Tap to confirm.', 4500); tickUI(); return true; }
       if (m.type === 'tagFbWait') { $('tagFbBtn').disabled = true; $('tagFbBtn').firstChild.textContent = '⏳ Waiting for the hider to confirm… '; return true; }

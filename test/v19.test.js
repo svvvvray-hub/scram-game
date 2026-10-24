@@ -31,6 +31,7 @@ const done = (a, cs) => { a.server.close(); cs.forEach(c => c.ws.terminate()); }
 
 const Walk = require('../walk');
 const Field = require('../public/field');
+const fast = (c) => { const m = last(c, 'gpsCfg'); return m ? m.intervalMs === 1000 : undefined; };
 const last = (c, t) => [...c.msgs].reverse().find(m => m.type === t);
 const at = (c, dm, acc = 4) => c.send({ type: 'loc', lat: 52 + dm / 111320, lng: 4, acc });
 const T = { tagWindowMs: 2000, tagMinSamples: 3, tagZoneMs: 0, tagMs: 1000, tagLiveMs: 400, tagGapMs: 1200, tagGraceMs: 300, tagHiderMs: 400, tagClaimMs: 3000 };
@@ -48,12 +49,12 @@ test('v19 autotag: a GPS gap pauses the ring (no reset), progress resumes; boost
   const { a, host, hunter, hider, L } = await tagGame({ tagMs: 3000 });
   at(host, 900); await close(0, hunter, hider, 900);
   const G = () => L.tags.get(hunter.joined.id + '>' + hider.joined.id); const a0 = G().acc; assert.ok(a0 > 300, 'progress ' + a0);
-  assert.ok(last(hunter, 'gpsBoost')?.on && last(hider, 'gpsBoost')?.on, 'both phones boosted');
+  assert.ok(fast(hunter) && fast(hider), 'both phones boosted');
   await close(0, hunter, null, 900); // hider silent 0.9 s (> live, < gap)
   assert.ok(G().acc >= a0, 'not reset');
   assert.ok(hunter.msgs.some(m => m.type === 'tagProg' && m.paused && m.p > 0), 'hunter told: paused');
   await close(0, hunter, hider, 2600); await until(() => caught(host, hider.joined.id));
-  await until(() => last(hunter, 'gpsBoost')?.on === false || last(hider, 'gpsBoost')?.on === false);
+  await until(() => fast(hunter) === false || fast(hider) === false);
   done(a, [host, hunter, hider]);
 });
 
@@ -172,15 +173,18 @@ test('v19 tag debug overlay: host-only (dist / accuracies / close%), never to ot
 test('v20 approach: one Saver-rate fix each within ~40 m (accuracy-inflated) -> fast GPS on both phones before any ring progress; far players stay normal', async () => {
   const { a, host, hunter, hider, L } = await tagGame();
   at(host, 900); at(hider, 0, 20); at(hunter, 50, 5); // single stale-ish fixes, 50 m apart, hider ±20 m: 50-25 <= 40
-  await until(() => last(hunter, 'gpsBoost')?.on && last(hider, 'gpsBoost')?.on);
+  await until(() => fast(hunter) && fast(hider));
   assert.ok(!hunter.msgs.some(m => m.type === 'tagProg' && m.p > 0), 'no ring progress yet');
-  assert.ok(!last(host, 'gpsBoost')?.on, 'the far player is not boosted');
-  assert.ok(!hunter.msgs.some(m => m.type === 'gpsBoost' && (m.lat || m.d || m.id)), 'boost carries no position / distance / id');
+  assert.ok(!fast(host), 'the far player is not boosted');
+  const shape = m => Object.keys(m).sort().join(); const cfgs = [...hunter.msgs, ...hider.msgs, ...host.msgs].filter(m => m.type === 'gpsCfg');
+  assert.ok(cfgs.length && cfgs.every(m => shape(m) === 'highAcc,intervalMs,maxAgeMs,type'), 'fast / normal GPS setting: identical routine shape, no position / distance / id');
+  assert.ok(!hider.msgs.some(m => /boost|near|hunter/i.test(JSON.stringify(m)) && m.type === 'gpsCfg'), 'nothing in the hider\'s setting hints at a hunter');
+  assert.ok(host.msgs.some(m => m.type === 'gpsCfg' && m.intervalMs === 4000), 'far players get the same routine message (normal rate)');
   done(a, [host, hunter, hider]);
 });
 test('v20 approach: 200 m apart -> no fast GPS', async () => {
   const { a, host, hunter, hider } = await tagGame();
   at(host, 900); at(hider, 0, 10); at(hunter, 200, 5); await sleep(600);
-  assert.ok(!last(hunter, 'gpsBoost')?.on && !last(hider, 'gpsBoost')?.on);
+  assert.ok(!fast(hunter) && !fast(hider));
   done(a, [host, hunter, hider]);
 });

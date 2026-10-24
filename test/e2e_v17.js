@@ -34,7 +34,7 @@ const LAT = 37.7596, LNG = -122.4269, M = 1 / 111320;
   check(await H.isHidden('#tagRing'), 'ring reset after moving away');
   // stay close -> rings fill on both phones
   const tc = Date.now(); await go(H, 1); for (let i = 0; i < 12; i++) { await sleep(700); await go(H, 1 + (i % 2) * 0.3); await go(A, 0); const v = await H.evaluate(() => getComputedStyle(document.getElementById('tagRing')).getPropertyValue('--p')); if (+v >= 0.4) break; }
-  check(await H.isVisible('#fastPill') && await A.isVisible('#fastPill') && !(await H.isVisible('#saverPill')), 'v20: 📍 fast GPS on both phones (Saver overridden)');
+  check(await H.isVisible('#fastPill') && !(await H.isVisible('#saverPill')) && await A.evaluate(() => window.gpsBoost === true) && !(await A.isVisible('#fastPill')), 'v20.1: fast GPS on both phones; 📍 pill on the hunter only (silent on the hider)');
   check(await H.isVisible('#dbgBtn') && !(await A.isVisible('#dbgBtn')), 'v20: 🛠 Debug button for the host only');
   await H.click('#dbgBtn'); await H.waitForSelector('#tagDbg:not(.hidden)', { timeout: 5000 }); check(/d [\d.]+ m .*close \d+%/.test(await H.textContent('#tagDbg')) && await A.isHidden('#tagDbg'), 'v20: debug overlay on the host ring only: ' + await H.textContent('#tagDbg'));
   await H.screenshot({ path: 'shots/v20_fast_gps_debug.png' }); await A.screenshot({ path: 'shots/v20_hider_fast_gps.png' });

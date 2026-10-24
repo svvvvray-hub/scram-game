@@ -681,7 +681,7 @@ function createApp(opts = {}) {
       else if (!k.startedAt && t > k.expiresAt) finishTask(L, h, false, 'expired'); }
   }
   // ---- v17 automatic proximity tag (server-only; positions never leave the server) ----
-  const NEAR_HOLD = opts.tagNearHoldMs ?? 15000, TAG_MS = opts.tagMs ?? 10000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
+  const GPS_CFG_EVERY = opts.gpsCfgEveryMs ?? 20000, NEAR_HOLD = opts.tagNearHoldMs ?? 15000, TAG_MS = opts.tagMs ?? 10000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
   // v19: GPS gaps (no fresh fix from a phone) PAUSE the ring; only confirmed out-of-range positions reset it (after the grace).
   const TAG_LIVE = opts.tagLiveMs ?? 4500, TAG_GAP = opts.tagGapMs ?? 8000, TAG_FB_MIN = 0.3, FB_CLAIM_MS = opts.tagClaimMs ?? 30000, FB_HIDER_MS = opts.tagHiderMs ?? 15000, FB_HOST_MS = 60000;
   function tagFallback(L, h, x) { // hider's GPS went quiet mid-tag: hunter may claim, hider confirms, else the host decides
@@ -749,7 +749,8 @@ function createApp(opts = {}) {
       const d = dbgOn && isHost ? dbg.get(p.id) || null : null, dj = d ? JSON.stringify(d) : '';
       if (v !== (p.tagP || 0) || pz !== !!p.tagPz || dj !== (p.tagDbg || '')) { p.tagP = v; p.tagPz = pz; p.tagDbg = dj;
         if (L.state === 'playing') send(p.ws, { type: 'tagProg', p: v, paused: pz, role: isHunter(p) ? 'hunter' : 'hider', ...(d ? { dbg: d } : {}) }); } // dbg: host's own phone only, when the host turned it on
-      const b = boost.has(p.id) && L.state === 'playing'; if (b !== !!p.boost) { p.boost = b; send(p.ws, { type: 'gpsBoost', on: b }); }
+      const b = boost.has(p.id) && L.state === 'playing'; // v20.1: one routine-looking GPS setting for everyone (same type + shape on/off, also re-sent every 20 s):
+      if (L.state === 'playing' && (b !== !!p.boost || t - (p.cfgAt || 0) >= GPS_CFG_EVERY)) { p.boost = b; p.cfgAt = t; send(p.ws, { type: 'gpsCfg', intervalMs: b ? 1000 : 4000, maxAgeMs: b ? 0 : 3000, highAcc: true }); }
     }
   }
   // ---- v18 post-round Regroup: only while L.state === 'ended' (all in-game secrecy rules are untouched) ----
