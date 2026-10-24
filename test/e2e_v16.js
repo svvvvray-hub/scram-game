@@ -27,7 +27,7 @@ const LAT = 37.7596, LNG = -122.4269;
   check(await H.evaluate(() => S.settings.tasks) === 'off', 'Classic (real default): tasks off');
   await H.evaluate(() => sendMsg({ type: 'settings', settings: { mode: 'party' } })); await H.waitForFunction(() => S.settings.tasks === 'normal');
   check(true, 'Party: tasks default to Normal');
-  await H.evaluate(() => sendMsg({ type: 'settings', settings: { hideSec: 0 } })); await H.waitForFunction(() => S.settings.hideSec === 0);
+  await H.evaluate(() => sendMsg({ type: 'settings', settings: { hideSec: 0, mode: 'custom', autoTag: 0 } })); await H.waitForFunction(() => S.settings.hideSec === 0 && S.settings.autoTag === 0); // everyone shares one test GPS spot: keep v17 auto-tag out of this suite
   await H.evaluate(() => sendMsg({ type: 'role', id: S.you, role: 'hunter' })); await sleep(200);
   await H.evaluate(() => sendMsg({ type: 'start', force: true })); await A.waitForFunction(() => S.state === 'playing', null, { timeout: 15000 });
   await sleep(1500);

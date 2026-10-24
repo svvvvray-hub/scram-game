@@ -39,9 +39,9 @@ function makeCode(lobbies) {
 const FEATURES = ['decoy', 'chime', 'bounty', 'cam', 'compass'];
 // Game modes: presets over the individual toggles. Pings, the field and catch confirmation are always on.
 const MODES = {
-  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off', tasks: 'off' },
-  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal', tasks: 'normal' },
-  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos', tasks: 'normal' },
+  classic: { label: 'Classic', desc: 'Pure hide & seek: pings, the field, the chime and catch confirmation. No extras.', features: { decoy: false, chime: true, bounty: false, cam: false, compass: false }, powerups: 'off', tasks: 'off', autoTag: 5 },
+  party: { label: 'Party', desc: 'Classic plus decoys, bounties, power-ups (every 3 min) and the sudden-death compass.', features: { decoy: true, chime: true, bounty: true, cam: false, compass: true }, powerups: 'normal', tasks: 'normal', autoTag: 5 },
+  chaos: { label: 'Chaos', desc: 'Everything on: cam peek too, and power-ups drop every 90 s.', features: { decoy: true, chime: true, bounty: true, cam: true, compass: true }, powerups: 'chaos', tasks: 'normal', autoTag: 5 },
   custom: { label: 'Custom', desc: 'Pick every toggle yourself.' },
 };
 const DEFAULT_GAME_SEC = clampNum0(process.env.GAME_MIN, 0.5, 360, 20) * 60; // dev/test: GAME_MIN=2 node server.js
@@ -167,7 +167,7 @@ function createApp(opts = {}) {
     const code = makeCode(lobbies);
     const L = {
       code, createdAt: now(), hostId: null, players: new Map(), state: 'lobby',
-      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, teammates: true, powerups: 'normal', tasks: 'off', chimeVol: 25,
+      settings: { gameSec: opts.gameSec || DEFAULT_GAME_SEC, pingSec: 60, hideSec: 120, caughtBecomeHunter: true, showRevealed: true, teammates: true, powerups: 'normal', tasks: 'off', autoTag: 0, manualTag: true, chimeVol: 25,
         features: Object.fromEntries(FEATURES.map(f => [f, true])), mode: 'custom' },
       field: null, bounty: null, photos: {}, camAt: 0, compassAt: 0, nextBountyAt: 0, nextCompassAt: 0,
       startedAt: 0, hideEndsAt: 0, endsAt: 0, nextPingAt: 0, pings: [], winner: null, endedAt: 0, events: [], idleSince: now(), round: 0,
@@ -179,7 +179,7 @@ function createApp(opts = {}) {
     return L;
   }
 
-  function applyMode(st, mode) { const M = MODES[mode]; if (!M) return; st.mode = mode; if (M.features) { st.features = { ...M.features }; st.powerups = M.powerups; st.tasks = M.tasks; } }
+  function applyMode(st, mode) { const M = MODES[mode]; if (!M) return; st.mode = mode; if (M.features) { st.features = { ...M.features }; st.powerups = M.powerups; st.tasks = M.tasks; st.autoTag = M.autoTag; } }
   // {social:{handle,platform}} or legacy {ig, platform?} -> normalized social or null
   const socialIn = m => Socials.norm(m.social && typeof m.social === 'object' ? m.social : { handle: m.ig, platform: m.platform });
   function addPlayer(L, name, social) {
@@ -452,7 +452,7 @@ function createApp(opts = {}) {
           for (const p of L.players.values()) tryClaim(L, p);
           broadcast(L);
         }
-        tickPowerups(L); tickTasks(L);
+        tickPowerups(L); tickTasks(L); tickTags(L);
         if (F.cam && L.camAt && t >= L.camAt) { L.camAt = 0; requestPhotos(L); broadcast(L); }
         if (L.camDeadline && t >= L.camDeadline) { expirePhotos(L); broadcast(L); }
       }
@@ -663,10 +663,49 @@ function createApp(opts = {}) {
       if (k.startedAt && t > k.startedAt + k.limitMs + Tasks.GRACE) finishTask(L, h, false, 'timeout');
       else if (!k.startedAt && t > k.expiresAt) finishTask(L, h, false, 'expired'); }
   }
+  // ---- v17 automatic proximity tag (server-only; positions never leave the server) ----
+  const TAG_MS = opts.tagMs ?? 5000, TAG_GRACE = opts.tagGraceMs ?? 1500, TAG_FRESH = 8000, TAG_MAX_ACC = 30;
+  // poor accuracy => longer contact AND a tighter distance
+  function tagRule(R, acc) { const bad = Math.max(0, acc - R); return { need: Math.round(TAG_MS * (1 + Math.min(1.4, bad / 10))), within: Math.max(R * 0.6, R - bad * 0.1) }; }
+  function tickTags(L) {
+    const R = L.settings.autoTag, t = now(); if (!L.tags) L.tags = new Map();
+    if (!R) return;
+    const hunters = [...L.players.values()].filter(p => isHunter(p) && p.loc && t - p.loc.recvAt < TAG_FRESH);
+    const prog = new Map(); // player id -> best progress 0..1
+    const bump = (id, v) => prog.set(id, Math.max(prog.get(id) || 0, v));
+    for (const h of activeHiders(L)) {
+      for (const x of hunters) {
+        const key = x.id + '>' + h.id; let g = L.tags.get(key);
+        const fresh = h.loc && t - h.loc.recvAt < TAG_FRESH, acc = fresh ? Math.max(h.loc.acc || 0, x.loc.acc || 0) : 999;
+        const rule = tagRule(R, acc), inR = fresh && acc <= TAG_MAX_ACC && distM(h.loc, x.loc) <= rule.within;
+        if (inR) {
+          const fx = h.loc.recvAt + ':' + x.loc.recvAt;
+          if (!g) { g = { start: t, lastIn: t, fixes: 1, fx }; L.tags.set(key, g); }
+          g.lastIn = t; if (g.fx !== fx) { g.fx = fx; g.fixes++; }
+          const p = Math.min(1, (t - g.start) / rule.need);
+          if (p >= 1 && g.fixes >= 2) { // continuous contact, confirmed by more than one GPS fix: a walk-by never gets here
+            for (const k of [...L.tags.keys()]) if (k.endsWith('>' + h.id)) L.tags.delete(k);
+            h.tagP = x.tagP = 0; send(h.ws, { type: 'tagProg', p: 0, role: 'hider' }); send(x.ws, { type: 'tagProg', p: 0, role: 'hunter' });
+            logEv(L, 'autotag', { id: h.id, by: x.id }, `📍 Auto-tag: ${x.name} stayed next to ${h.name}`);
+            catchHider(L, h, x); if (L.state !== 'playing') return; break;
+          }
+          bump(h.id, Math.min(p, 0.99)); bump(x.id, Math.min(p, 0.99));
+        } else if (g) {
+          if (t - g.lastIn > TAG_GRACE) L.tags.delete(key); // out of range too long: tag broken, ring resets
+          else { const p = Math.min(0.99, (g.lastIn - g.start) / rule.need); bump(h.id, p); bump(x.id, p); }
+        }
+      }
+    }
+    for (const k of [...L.tags.keys()]) { const [a, b] = k.split('>'); const x = L.players.get(a), h = L.players.get(b); if (!x || !h || !isHunter(x) || h.caught || h.role !== 'hider') L.tags.delete(k); }
+    for (const p of L.players.values()) { // send only on change; hunters get a bare number (no id, no direction, no distance)
+      const v = Math.round((prog.get(p.id) || 0) * 20) / 20; if (v === (p.tagP || 0)) continue; p.tagP = v;
+      if (L.state === 'playing') send(p.ws, { type: 'tagProg', p: v, role: isHunter(p) ? 'hunter' : 'hider' });
+    }
+  }
   function resetFeatures(L, ps) {
     L.bounty = null; L.photos = {}; L.camAt = L.compassAt = L.nextBountyAt = L.nextCompassAt = L.camDeadline = 0; L.compassAnnounced = false;
-    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; p.task = null; p.noisy = false; }
-    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null; L.taskTimes = []; L.taskIdx = 0;
+    for (const p of ps) { p.decoys = 2; p.decoyArmed = false; p.wipeNext = false; p.outSince = 0; p.oobReveal = false; p.held = null; p.lastUse = 0; p.pickup = null; p.silent = false; p.shieldUntil = p.radarUntil = p.houndUntil = 0; p.used = 0; p.fullWarned = false; p.task = null; p.noisy = false; p.tagP = 0; }
+    L.drops.clear(); L.nextDropAt = 0; L.jamUntil = 0; L.truthNext = false; L.shrink = null; L.taskTimes = []; L.taskIdx = 0; L.tags = new Map();
   }
   function rematch(L) {
     if (L.state !== 'ended') return;
@@ -782,10 +821,12 @@ function createApp(opts = {}) {
           if ('teammates' in s) L.settings.teammates = !!s.teammates;
           if (['off', 'normal', 'chaos'].includes(s.powerups)) L.settings.powerups = s.powerups;
           if (['off', 'normal', 'often'].includes(s.tasks)) L.settings.tasks = s.tasks;
+          if ([0, 3, 5, 8].includes(s.autoTag)) L.settings.autoTag = s.autoTag;
+          if ('manualTag' in s) L.settings.manualTag = !!s.manualTag;
           if ('chimeVol' in s) L.settings.chimeVol = Math.round(clampNum(s.chimeVol, 10, 100, L.settings.chimeVol));
           if (s.features && typeof s.features === 'object') for (const f of FEATURES) if (f in s.features) L.settings.features[f] = !!s.features[f];
           if (s.mode && MODES[s.mode] && s.mode !== 'custom') applyMode(L.settings, s.mode); // a preset wins over the individual toggles
-          else { const M = MODES[L.settings.mode]; if (s.mode === 'custom' || (M?.features && (L.settings.powerups !== M.powerups || L.settings.tasks !== M.tasks || FEATURES.some(f => L.settings.features[f] !== M.features[f])))) L.settings.mode = 'custom'; }
+          else { const M = MODES[L.settings.mode]; if (s.mode === 'custom' || (M?.features && (L.settings.powerups !== M.powerups || L.settings.tasks !== M.tasks || L.settings.autoTag !== M.autoTag || FEATURES.some(f => L.settings.features[f] !== M.features[f])))) L.settings.mode = 'custom'; }
           broadcast(L);
         } break;
         case 'field': if (host && (L.state === 'lobby' || L.state === 'ended')) {
@@ -837,9 +878,9 @@ function createApp(opts = {}) {
           if (ok && !m.unavailable) logEv(L, 'photo', { id: me.id }, `📷 Sneak-peek photo of ${me.name}`);
           relayPhoto(L, me.id); broadcast(L); } break;
         case 'catch': { const h = L.players.get(m.id);
-          if (host && isHunter(me)) catchHider(L, h, me); // host override: immediate
-          else if (isHunter(me)) claimCatch(L, h, me, 'hunter'); break; }
-        case 'caughtSelf': if (me.role === 'hider') claimCatch(L, me, null, 'hider'); break;
+          if (host && isHunter(me)) catchHider(L, h, me); // host override: immediate (always, even with manual tags off)
+          else if (isHunter(me) && L.settings.manualTag !== false) claimCatch(L, h, me, 'hunter'); break; }
+        case 'caughtSelf': if (me.role === 'hider' && L.settings.manualTag !== false) claimCatch(L, me, null, 'hider'); break;
         case 'usePower': usePower(L, me); break;
         case 'chimeTest': if (host && L.state === 'lobby') { // preview on every phone; throttled to once per 1.5 s
           const t = now(); if (t - (L.chimeTestAt || 0) < CHIME_THROTTLE) break;

@@ -117,3 +117,52 @@ test('tasks: hold still without GPS fixes fails; caught hider loses the task', a
   await sleep(200);
   done(a, [host, ...ps]);
 });
+
+// ---- v17 automatic proximity tag
+async function tagGame(o = {}, st = {}) {
+  const a = await boot({ tagMs: 600, tagGraceMs: 300, ...o }); const { host, ps } = await lobby(a, 3);
+  host.send({ type: 'settings', settings: { hideSec: 0, gameSec: 1200, autoTag: 5, ...st } });
+  host.send({ type: 'role', id: host.joined.id, role: 'hunter' }); host.send({ type: 'start' });
+  await until(() => host.state.state === 'playing');
+  return { a, host, ps };
+}
+const at = (c, dm, acc = 4) => c.send({ type: 'loc', lat: 52 + dm / 111320, lng: 4, acc });
+test('autotag: staying within 5 m for the hold time tags the hider; both rings fill; hunter gets no position/id', async () => {
+  const { a, host, ps } = await tagGame(); const [h1, h2] = ps;
+  at(h2, 500); for (let i = 0; i < 6; i++) { at(host, 0); at(h1, 2); await sleep(150); }
+  await until(() => host.state.players.find(p => p.id === h1.joined.id).caught);
+  const hp = host.msgs.filter(m => m.type === 'tagProg'); assert.ok(hp.some(m => m.p > 0 && m.p < 1)); assert.ok(hp.every(m => Object.keys(m).sort().join() === 'p,role,type'));
+  assert.ok(h1.msgs.some(m => m.type === 'tagProg' && m.p > 0)); assert.ok(!h2.msgs.some(m => m.type === 'tagProg' && m.p > 0));
+  assert.ok(!host.state.players.find(p => p.id === h2.joined.id).caught);
+  done(a, [host, ...ps]);
+});
+test('autotag: a walk-by (one fix in range) and moving out (after grace) do not tag; ring resets', async () => {
+  const { a, host, ps } = await tagGame(); const [h1] = ps;
+  at(host, 0); at(h1, 2); await sleep(150); at(h1, 40); await sleep(1200); // walk-by
+  assert.ok(!host.state.players.find(p => p.id === h1.joined.id).caught);
+  assert.equal(host.msgs.filter(m => m.type === 'tagProg').at(-1).p, 0);
+  at(h1, 2); await sleep(400); at(h1, 30); await sleep(500); at(h1, 2); await sleep(300); // broke contact longer than grace -> restarted
+  const L = [...a.lobbies.values()][0]; const g = [...L.tags.values()][0]; assert.ok(!g || Date.now() - g.start < 450);
+  done(a, [host, ...ps]);
+});
+test('autotag: poor accuracy needs longer + tighter contact; very poor never auto-tags; off = no tagging', async () => {
+  const { a, host, ps } = await tagGame(); const [h1] = ps;
+  for (let i = 0; i < 6; i++) { at(host, 0, 25); at(h1, 4.5, 25); await sleep(150); } // 4.5 m apart but ±25 m: too loose
+  assert.ok(!host.state.players.find(p => p.id === h1.joined.id).caught);
+  for (let i = 0; i < 6; i++) { at(host, 0, 50); at(h1, 0, 50); await sleep(150); }
+  assert.ok(!host.state.players.find(p => p.id === h1.joined.id).caught);
+  const t0 = Date.now(); while (!host.state.players.find(p => p.id === h1.joined.id).caught && Date.now() - t0 < 4000) { at(host, 0, 20); at(h1, 1, 20); await sleep(150); }
+  assert.ok(host.state.players.find(p => p.id === h1.joined.id).caught); assert.ok(Date.now() - t0 > 900, 'took longer than the 600 ms base');
+  done(a, [host, ...ps]);
+  const b = await tagGame({}, { autoTag: 0 }); for (let i = 0; i < 8; i++) { at(b.host, 0); at(b.ps[0], 1); await sleep(150); }
+  assert.ok(!b.host.state.players.find(p => p.id === b.ps[0].joined.id).caught); done(b.a, [b.host, ...b.ps]);
+});
+test('autotag: manual tag toggle; presets default 5 m', async () => {
+  const a = await boot({ defaultMode: 'classic' }); const { host, ps } = await lobby(a, 3);
+  assert.equal(host.state.settings.autoTag, 5); assert.equal(host.state.settings.manualTag, true);
+  host.send({ type: 'settings', settings: { manualTag: false, hideSec: 0 } }); await until(() => host.state.settings.manualTag === false);
+  host.send({ type: 'role', id: ps[0].joined.id, role: 'hunter' }); host.send({ type: 'start' }); await until(() => host.state.state === 'playing');
+  ps[0].send({ type: 'catch', id: ps[1].joined.id }); ps[1].send({ type: 'caughtSelf' }); await sleep(200);
+  assert.equal(host.state.catches?.length || 0, 0);
+  done(a, [host, ...ps]);
+});

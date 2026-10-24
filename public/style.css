@@ -275,3 +275,9 @@ input[type=datetime-local]{color-scheme:dark}
 .tkHold{text-align:center}.tkHold .ring{width:120px;height:120px;border-radius:50%;margin:10px auto;border:8px solid #7c5cff;display:grid;place-items:center;font-size:48px;animation:tkPulse 2s ease-in-out infinite}
 @keyframes tkPulse{50%{transform:scale(.94);opacity:.8}}
 body:has(#taskCard:not(.hidden)) #toast{pointer-events:none}
+/* v17 auto-tag ring */
+#tagRing{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 96px);transform:translateX(-50%);z-index:1250;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+#tagRing .tr{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--c) calc(var(--p,0)*360deg),#0009 0);box-shadow:0 4px 18px #000a;transition:background .2s}
+#tagRing .tr span{width:74px;height:74px;border-radius:50%;background:#15161c;color:#fff;display:grid;place-items:center;font-weight:800;font-size:20px}
+#tagRing b{background:#15161ce6;color:#fff;padding:6px 12px;border-radius:999px;font-size:14px}
+#tagRing.hider{--c:#e5484d}#tagRing.hunter{--c:#f5a524}#tagRing.hidden{display:none}

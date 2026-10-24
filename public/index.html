@@ -69,9 +69,11 @@
     <p class="note" id="pickNote">🎲 Roles are dealt randomly at start.</p>
     <label class="chk"><input id="sReveal" type="checkbox"> Tell hiders when they were revealed</label>
     <label class="chk"><input id="sMates" type="checkbox" checked> Teammates visible (hiders see fellow hiders live)</label>
+    <label class="chk"><input id="sManualTag" type="checkbox" checked> Manual tag buttons (Catch / I got caught) as a fallback</label>
     <div id="customBox" class="hidden">
     <label>🎁 Power-up drops<select id="sPower"><option value="off">Off</option><option value="normal">Normal (every 3 min)</option><option value="chaos">Chaos (every 90 s)</option></select></label>
     <label>🧩 Hider tasks<select id="sTasks"><option value="off">Off</option><option value="normal">Normal (~3 per game)</option><option value="often">Often (~5 per game)</option></select></label>
+    <label>📍 Auto-tag<select id="sAutoTag"><option value="0">Off</option><option value="3">3 m</option><option value="5">5 m</option><option value="8">8 m</option></select></label>
     </div>
     <label>🔔 Chime volume <span id="chimeVolLbl">25%</span><input id="sChimeVol" type="range" min="10" max="100" step="5" value="25"></label>
     <div class="seg"><button id="btnChimeAll" class="small">🔔 Test chime on all phones</button> <span id="chimeTally" class="note"></span></div>
@@ -190,6 +192,7 @@
 <div id="reveal" class="hidden" aria-live="assertive"><canvas id="rvRadar"></canvas><div id="rvPulse"></div><div id="rvStage"></div><button id="rvSkip" class="hidden">Skip</button></div>
 <div id="coach" class="coach" role="status" aria-live="polite"><span id="coachTxt"></span><button id="coachX" aria-label="Dismiss tip">✕</button></div>
 <div id="toast" class="toast"></div>
+<div id="tagRing" class="hidden" aria-live="polite"><div class="tr"><span id="tagPct"></span></div><b id="tagTxt"></b></div>
 <button id="taskPill" class="hidden" aria-label="Open task">🧩 Task</button>
 <div id="taskCard" class="hidden" role="dialog" aria-label="Task"><div class="sheetHead"><b id="taskTitle">Task</b><span id="taskTime" class="tkTime"></span><button id="taskClose" class="small" aria-label="Hide task">✕ Later</button></div>
 <div class="tkBarW"><div id="taskBar" class="tkBar"></div></div><p id="taskHint" class="note"></p><div id="taskBody"></div></div>
